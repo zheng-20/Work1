@@ -318,7 +318,7 @@ def main_worker(gpu, ngpus_per_node, argss):
         scaler = None
 
     if args.test_only:
-        s_miou, p_miou, type_loss_val, boundary_loss_val = validate(val_loader, model, criterion, boundary_criterion)
+        s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
         # print("s_miou: {}, p_miou: {}".format(s_miou, p_miou))
         return 0
         
@@ -330,19 +330,19 @@ def main_worker(gpu, ngpus_per_node, argss):
             logger.info("lr: {}".format(scheduler.get_last_lr()))
 
         # loss_train, mIoU_train, mAcc_train, allAcc_train = train(train_loader, model, criterion, optimizer, epoch)
-        type_loss_train, boundary_loss_train = train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, scaler, scheduler)
+        loss_train, feat_loss_train, type_loss_train, boundary_loss_train, contrast_loss_train, mIoU_train, mAcc_train, allAcc_train = train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, scaler, scheduler)
         if args.scheduler_update == 'epoch':
             scheduler.step()
         epoch_log = epoch + 1
         if main_process():
-            # writer.add_scalar('feat_loss_train', feat_loss_train, epoch_log)
+            writer.add_scalar('feat_loss_train', feat_loss_train, epoch_log)
             writer.add_scalar('type_loss_train', type_loss_train, epoch_log)
             writer.add_scalar('boundary_loss_train', boundary_loss_train, epoch_log)
-            # writer.add_scalar('contrast_loss_train', contrast_loss_train, epoch_log)
-            # writer.add_scalar('loss_train', loss_train, epoch_log)
-            # writer.add_scalar('mIoU_train', mIoU_train, epoch_log)
-            # writer.add_scalar('mAcc_train', mAcc_train, epoch_log)
-            # writer.add_scalar('allAcc_train', allAcc_train, epoch_log)
+            writer.add_scalar('contrast_loss_train', contrast_loss_train, epoch_log)
+            writer.add_scalar('loss_train', loss_train, epoch_log)
+            writer.add_scalar('mIoU_train', mIoU_train, epoch_log)
+            writer.add_scalar('mAcc_train', mAcc_train, epoch_log)
+            writer.add_scalar('allAcc_train', allAcc_train, epoch_log)
 
         is_best = False
         if args.evaluate and (epoch_log % args.eval_freq == 0):
@@ -350,18 +350,19 @@ def main_worker(gpu, ngpus_per_node, argss):
             #     raise NotImplementedError()
             # else:
             #     loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion)
-            s_miou, p_miou, type_loss_val, boundary_loss_val = validate(val_loader, model, criterion, boundary_criterion)
+            s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
 
             if main_process():
-                # writer.add_scalar('feat_loss_val', feat_loss_val, epoch_log)
+                writer.add_scalar('feat_loss_val', feat_loss_val, epoch_log)
                 writer.add_scalar('type_loss_val', type_loss_val, epoch_log)
                 writer.add_scalar('boundary_loss_val', boundary_loss_val, epoch_log)
+                writer.add_scalar('contrast_loss_val', contrast_loss_val, epoch_log)
                 writer.add_scalar('s_miou', s_miou, epoch_log)
                 writer.add_scalar('p_miou', p_miou, epoch_log)
-                # writer.add_scalar('loss_val', loss_val, epoch_log)
-                # writer.add_scalar('mIoU_val', mIoU_val, epoch_log)
-                # writer.add_scalar('mAcc_val', mAcc_val, epoch_log)
-                # writer.add_scalar('allAcc_val', allAcc_val, epoch_log)
+                writer.add_scalar('loss_val', loss_val, epoch_log)
+                writer.add_scalar('mIoU_val', mIoU_val, epoch_log)
+                writer.add_scalar('mAcc_val', mAcc_val, epoch_log)
+                writer.add_scalar('allAcc_val', allAcc_val, epoch_log)
                 is_best = s_miou > best_iou
                 best_iou = max(best_iou, s_miou)
 
@@ -384,10 +385,10 @@ def main_worker(gpu, ngpus_per_node, argss):
 def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, scaler, scheduler):
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    # loss_meter = AverageMeter()
-    # intersection_meter = AverageMeter()
-    # union_meter = AverageMeter()
-    # target_meter = AverageMeter()
+    loss_meter = AverageMeter()
+    intersection_meter = AverageMeter()
+    union_meter = AverageMeter()
+    target_meter = AverageMeter()
     feat_loss_meter = AverageMeter()
     type_loss_meter = AverageMeter()
     boundary_loss_meter = AverageMeter()
@@ -412,16 +413,16 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
-            type_per_point, boundary_pred = model([coord, normals, offset], edges)
+            primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges)
             assert type_per_point.shape[1] == args.classes
             if semantic.shape[-1] == 1:
                 semantic = semantic[:, 0]  # for cls
             # loss = criterion(output, target)
-            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
             boundary_loss = boundary_criterion(boundary_pred, boundary)
-            # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
-            loss = type_loss + boundary_loss
+            contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
             
         optimizer.zero_grad()
         # loss.backward()
@@ -439,34 +440,34 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
             scheduler.step()
 
         # output = output.max(1)[1]
-        # n = coord.size(0)
-        # if args.multiprocessing_distributed:
-        #     loss *= n
-        #     count = target.new_tensor([n], dtype=torch.long)
-        #     dist.all_reduce(loss), dist.all_reduce(count)
-        #     n = count.item()
-        #     loss /= n
-        # intersection, union, target = intersectionAndUnionGPU(output, target, args.classes, args.ignore_label)
-        # if args.multiprocessing_distributed:
-        #     dist.all_reduce(intersection), dist.all_reduce(union), dist.all_reduce(target)
-        # intersection, union, target = intersection.cpu().numpy(), union.cpu().numpy(), target.cpu().numpy()
-        # intersection_meter.update(intersection), union_meter.update(union), target_meter.update(target)
+        n = coord.size(0)
+        if args.multiprocessing_distributed:
+            loss *= n
+            count = target.new_tensor([n], dtype=torch.long)
+            dist.all_reduce(loss), dist.all_reduce(count)
+            n = count.item()
+            loss /= n
+        intersection, union, target = intersectionAndUnionGPU(type_per_point.max(1)[1], semantic, args.classes, args.ignore_label)
+        if args.multiprocessing_distributed:
+            dist.all_reduce(intersection), dist.all_reduce(union), dist.all_reduce(target)
+        intersection, union, target = intersection.cpu().numpy(), union.cpu().numpy(), target.cpu().numpy()
+        intersection_meter.update(intersection), union_meter.update(union), target_meter.update(target)
 
-        # accuracy = sum(intersection_meter.val) / (sum(target_meter.val) + 1e-10)
-        # loss_meter.update(loss.item(), n)
+        accuracy = sum(intersection_meter.val) / (sum(target_meter.val) + 1e-10)
+        loss_meter.update(loss.item(), n)
         
         # All Reduce loss
         if args.multiprocessing_distributed:
-            # dist.all_reduce(feat_loss.div_(torch.cuda.device_count()))
+            dist.all_reduce(feat_loss.div_(torch.cuda.device_count()))
             dist.all_reduce(type_loss.div_(torch.cuda.device_count()))
             dist.all_reduce(boundary_loss.div_(torch.cuda.device_count()))
-            # dist.all_reduce(contrast_loss.div_(torch.cuda.device_count()))
-        # feat_loss_, type_loss_, boundary_loss_, contrast_loss_ = feat_loss.data.cpu().numpy(), type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy(), contrast_loss.data.cpu().numpy()
-        type_loss_, boundary_loss_ = type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
-        # feat_loss_meter.update(feat_loss_.item())
+            dist.all_reduce(contrast_loss.div_(torch.cuda.device_count()))
+        feat_loss_, type_loss_, boundary_loss_, contrast_loss_ = feat_loss.data.cpu().numpy(), type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy(), contrast_loss.data.cpu().numpy()
+        # type_loss_, boundary_loss_ = type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
+        feat_loss_meter.update(feat_loss_.item())
         type_loss_meter.update(type_loss_.item())
         boundary_loss_meter.update(boundary_loss_.item())
-        # contrast_loss_meter.update(contrast_loss_.item())
+        contrast_loss_meter.update(contrast_loss_.item())
         batch_time.update(time.time() - end)
         end = time.time()
 
@@ -488,39 +489,42 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
                         'Data {data_time.val:.3f} ({data_time.avg:.3f}) '
                         'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
                         'Remain {remain_time} '
-                        # 'Loss {loss_meter.val:.4f} '
-                        # 'Feat_Loss {feat_loss_meter.val:.4f} '
+                        'Loss {loss_meter.val:.4f} '
+                        'Feat_Loss {feat_loss_meter.val:.4f} '
                         'Type_Loss {type_loss_meter.val:.4f} '
                         'Boundary_Loss {boundary_loss_meter.val:.4f} '
-                        # 'Contrast_Loss {contrast_loss_meter.val:.4f} '
+                        'Contrast_Loss {contrast_loss_meter.val:.4f} '
+                        'Acc {accuracy:.4f} '
                         'Lr: {lr}.'.format(epoch+1, args.epochs, i + 1, len(train_loader),
                                                           batch_time=batch_time, data_time=data_time,
                                                           remain_time=remain_time,
-                                                        #   feat_loss_meter=feat_loss_meter,
+                                                          loss_meter=loss_meter,
+                                                          feat_loss_meter=feat_loss_meter,
                                                           type_loss_meter=type_loss_meter,
                                                           boundary_loss_meter=boundary_loss_meter,
-                                                        #   contrast_loss_meter=contrast_loss_meter,
+                                                          contrast_loss_meter=contrast_loss_meter,
+                                                          accuracy=accuracy,
                                                           lr=lr))
         if main_process():
-            # writer.add_scalar('feat_loss_train_batch', feat_loss_meter.val, current_iter)
+            writer.add_scalar('feat_loss_train_batch', feat_loss_meter.val, current_iter)
             writer.add_scalar('type_loss_train_batch', type_loss_meter.val, current_iter)
             writer.add_scalar('boundary_loss_train_batch', boundary_loss_meter.val, current_iter)
-            # writer.add_scalar('contrast_loss_train_batch', contrast_loss_meter.val, current_iter)
-            # writer.add_scalar('loss_train_batch', loss_meter.val, current_iter)
-            # writer.add_scalar('mIoU_train_batch', np.mean(intersection / (union + 1e-10)), current_iter)
-            # writer.add_scalar('mAcc_train_batch', np.mean(intersection / (target + 1e-10)), current_iter)
-            # writer.add_scalar('allAcc_train_batch', accuracy, current_iter)
+            writer.add_scalar('contrast_loss_train_batch', contrast_loss_meter.val, current_iter)
+            writer.add_scalar('loss_train_batch', loss_meter.val, current_iter)
+            writer.add_scalar('mIoU_train_batch', np.mean(intersection / (union + 1e-10)), current_iter)
+            writer.add_scalar('mAcc_train_batch', np.mean(intersection / (target + 1e-10)), current_iter)
+            writer.add_scalar('allAcc_train_batch', accuracy, current_iter)
 
-    # iou_class = intersection_meter.sum / (union_meter.sum + 1e-10)
-    # accuracy_class = intersection_meter.sum / (target_meter.sum + 1e-10)
-    # mIoU = np.mean(iou_class)
-    # mAcc = np.mean(accuracy_class)
-    # allAcc = sum(intersection_meter.sum) / (sum(target_meter.sum) + 1e-10)
-    # if main_process():
-    #     logger.info('Train result at epoch [{}/{}]: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(epoch+1, args.epochs, mIoU, mAcc, allAcc))
+    iou_class = intersection_meter.sum / (union_meter.sum + 1e-10)
+    accuracy_class = intersection_meter.sum / (target_meter.sum + 1e-10)
+    mIoU = np.mean(iou_class)
+    mAcc = np.mean(accuracy_class)
+    allAcc = sum(intersection_meter.sum) / (sum(target_meter.sum) + 1e-10)
+    if main_process():
+        logger.info('Train result at epoch [{}/{}]: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(epoch+1, args.epochs, mIoU, mAcc, allAcc))
     # return loss_meter.avg, mIoU, mAcc, allAcc
 
-    return type_loss_meter.avg, boundary_loss_meter.avg
+    return loss_meter.avg, feat_loss_meter.avg, type_loss_meter.avg, boundary_loss_meter.avg, contrast_loss_meter.avg, mIoU, mAcc, allAcc
 
 
 def validate(val_loader, model, criterion, boundary_criterion):
@@ -528,7 +532,7 @@ def validate(val_loader, model, criterion, boundary_criterion):
         logger.info('>>>>>>>>>>>>>>>> Start Evaluation >>>>>>>>>>>>>>>>')
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    # loss_meter = AverageMeter()
+    loss_meter = AverageMeter()
     intersection_meter = AverageMeter()
     union_meter = AverageMeter()
     target_meter = AverageMeter()
@@ -539,7 +543,7 @@ def validate(val_loader, model, criterion, boundary_criterion):
     s_iou_meter = AverageMeter()
     type_iou_meter = AverageMeter()
 
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
     # boundarymodel.eval()
     model.eval()
@@ -562,22 +566,22 @@ def validate(val_loader, model, criterion, boundary_criterion):
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
 
-            type_per_point, boundary_pred = model([coord, normals, offset], edges)
+            primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges)
             # loss = criterion(output, target)
-            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
             boundary_loss = boundary_criterion(boundary_pred, boundary)
-            # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
-            loss = type_loss + boundary_loss
+            contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
 
         # output = output.max(1)[1]
-        # n = coord.size(0)
-        # if args.multiprocessing_distributed:
-        #     loss *= n
-        #     count = target.new_tensor([n], dtype=torch.long)
-        #     dist.all_reduce(loss), dist.all_reduce(count)
-        #     n = count.item()
-        #     loss /= n
+        n = coord.size(0)
+        if args.multiprocessing_distributed:
+            loss *= n
+            count = target.new_tensor([n], dtype=torch.long)
+            dist.all_reduce(loss), dist.all_reduce(count)
+            n = count.item()
+            loss /= n
 
         intersection, union, target = intersectionAndUnionGPU(type_per_point.max(1)[1], semantic, args.classes, args.ignore_label)
         if args.multiprocessing_distributed:
@@ -586,7 +590,7 @@ def validate(val_loader, model, criterion, boundary_criterion):
         intersection_meter.update(intersection), union_meter.update(union), target_meter.update(target)
 
         accuracy = sum(intersection_meter.val) / (sum(target_meter.val) + 1e-10)
-        # loss_meter.update(loss.item(), n)
+        loss_meter.update(loss.item(), n)
         
         softmax = torch.nn.Softmax(dim=1)
         boundary_pred_score = softmax(boundary_pred)
@@ -694,16 +698,19 @@ def validate(val_loader, model, criterion, boundary_criterion):
         # s_iou, p_iou = compute_iou(label, spec_cluster_pred, type_per_point, semantic, offset)
         # All Reduce loss
         if args.multiprocessing_distributed:
-            # dist.all_reduce(feat_loss.div_(torch.cuda.device_count()))
+            dist.all_reduce(feat_loss.div_(torch.cuda.device_count()))
             dist.all_reduce(type_loss.div_(torch.cuda.device_count()))
             dist.all_reduce(boundary_loss.div_(torch.cuda.device_count()))
+            dist.all_reduce(contrast_loss.div_(torch.cuda.device_count()))
             # dist.all_reduce(s_iou.div_(torch.cuda.device_count()))
             # dist.all_reduce(p_iou.div_(torch.cuda.device_count()))
+        feat_loss_, type_loss_, boundary_loss_, contrast_loss_ = feat_loss.data.cpu().numpy(), type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy(), contrast_loss.data.cpu().numpy()
         # feat_loss_, type_loss_, boundary_loss_ = feat_loss.data.cpu().numpy(), type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
-        type_loss_, boundary_loss_ = type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
-        # feat_loss_meter.update(feat_loss_.item())
+        # type_loss_, boundary_loss_ = type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
+        feat_loss_meter.update(feat_loss_.item())
         type_loss_meter.update(type_loss_.item())
         boundary_loss_meter.update(boundary_loss_.item())
+        contrast_loss_meter.update(contrast_loss_.item())
         s_iou_meter.update(s_iou)
         type_iou_meter.update(p_iou)
         batch_time.update(time.time() - end)
@@ -712,17 +719,22 @@ def validate(val_loader, model, criterion, boundary_criterion):
             logger.info('Test: [{}/{}] '
                         'Data {data_time.val:.3f} ({data_time.avg:.3f}) '
                         'Batch {batch_time.val:.3f} ({batch_time.avg:.3f}) '
-                        # 'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f}) '
-                        # 'Feat_Loss {feat_loss_meter.val:.4f} ({feat_loss_meter.avg:.4f}) '
+                        'Loss {loss_meter.val:.4f} ({loss_meter.avg:.4f}) '
+                        'Feat_Loss {feat_loss_meter.val:.4f} ({feat_loss_meter.avg:.4f}) '
                         'Type_Loss {type_loss_meter.val:.4f} ({type_loss_meter.avg:.4f}) '
                         'Boundary_Loss {boundary_loss_meter.val:.4f} ({boundary_loss_meter.avg:.4f}) '
+                        'Contrast_Loss {contrast_loss_meter.val:.4f} ({contrast_loss_meter.avg:.4f}) '
+                        'Acc {accuracy:.4f} '
                         'Seg_IoU {s_iou_meter.val:.4f} ({s_iou_meter.avg:.4f}) '
                         'Type_IoU {type_iou_meter.val:.4f} ({type_iou_meter.avg:.4f}).'.format(i + 1, len(val_loader),
                                                           data_time=data_time,
                                                           batch_time=batch_time,
-                                                        #   feat_loss_meter=feat_loss_meter,
+                                                          loss_meter=loss_meter,
+                                                          feat_loss_meter=feat_loss_meter,
                                                           type_loss_meter=type_loss_meter,
                                                           boundary_loss_meter=boundary_loss_meter,
+                                                          contrast_loss_meter=contrast_loss_meter,
+                                                          accuracy=accuracy,
                                                           s_iou_meter=s_iou_meter,
                                                           type_iou_meter=type_iou_meter))
 
@@ -740,7 +752,7 @@ def validate(val_loader, model, criterion, boundary_criterion):
         logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
 
     # return loss_meter.avg, mIoU, mAcc, allAcc
-    return s_iou_meter.avg, type_iou_meter.avg, type_loss_meter.avg, boundary_loss_meter.avg
+    return s_iou_meter.avg, type_iou_meter.avg, loss_meter.avg, feat_loss_meter.avg, type_loss_meter.avg, boundary_loss_meter.avg, contrast_loss_meter.avg, mIoU, mAcc, allAcc
 
 
 if __name__ == '__main__':

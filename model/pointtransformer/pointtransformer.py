@@ -709,22 +709,22 @@ class PTSeg_RG(nn.Module):
         x1_b = self.dec1[1:]([p1, self.dec1[0]([p1, x1, o1], [p2, x2_b, o2]), o1])[1]
         boundary_fea = self.decoder_boundary(x1_b)
         boundary = self.boundary(boundary_fea)
-        # boundary_pred = self.softmax(boundary).clone()
-        # boundary_pred = (boundary_pred[:, 1] > 0.5).int()
+        boundary_pred = self.softmax(boundary).clone()
+        boundary_pred = (boundary_pred[:, 1] > 0.5).int()
 
-        # # primitive decoder
-        # x5_prim = self.dec5[1:]([p5, self.dec5[0]([p5, x5, o5]), o5])[1]
-        # x4_prim = self.dec4_prim[1:]([p4, self.dec4[0]([p4, x4, o4], [p5, x5_prim, o5]), o4])[1]
-        # x3_prim = self.dec3_prim[1:]([p3, self.dec3[0]([p3, x3, o3], [p4, x4_prim, o4]), o3])[1]
-        # x2_prim = self.dec2_prim[1:]([p2, self.dec2[0]([p2, x2, o2], [p3, x3_prim, o3]), o2])[1]
-        # x1_prim = self.dec1_prim[1]([p1, self.dec1[0]([p1, x1, o1], [p2, x2_prim, o2]), o1], edges, boundary_pred)[1]
-        # # embedtype_fea = self.decoder_embedandtype(x1_prim)
+        # primitive decoder
+        x5_prim = self.dec5[1:]([p5, self.dec5[0]([p5, x5, o5]), o5])[1]
+        x4_prim = self.dec4_prim[1:]([p4, self.dec4[0]([p4, x4, o4], [p5, x5_prim, o5]), o4])[1]
+        x3_prim = self.dec3_prim[1:]([p3, self.dec3[0]([p3, x3, o3], [p4, x4_prim, o4]), o3])[1]
+        x2_prim = self.dec2_prim[1:]([p2, self.dec2[0]([p2, x2, o2], [p3, x3_prim, o3]), o2])[1]
+        x1_prim = self.dec1_prim[1]([p1, self.dec1[0]([p1, x1, o1], [p2, x2_prim, o2]), o1], edges, boundary_pred)[1]
+        embedtype_fea = self.decoder_embedandtype(x1_prim)
         # # embedtype_fea += 0.2*boundary_fea
-        type_per_point = self.cls(x1_b)
-        # primitive_embedding = self.embedding(embedtype_fea)
+        type_per_point = self.cls(embedtype_fea)
+        primitive_embedding = self.embedding(embedtype_fea)
 
-        # return primitive_embedding, type_per_point, boundary
-        return type_per_point, boundary
+        return primitive_embedding, type_per_point, boundary
+        # return type_per_point, boundary
 
 def pointtransformer_seg_repro_RG(**kwargs):
     model = PTSeg_RG(PointTransformerBlock, [2, 3, 4, 6, 3], **kwargs)
