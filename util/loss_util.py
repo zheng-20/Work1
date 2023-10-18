@@ -412,8 +412,8 @@ def mean_IOU_primitive_segment(matching, predicted_labels, labels, pred_prim, gt
 
 			# evaluation of primitive type prediction performance
 			gt_prim_type_k = gt_prim[b][gt_indices][0]
-			# if gt_prim[b][gt_indices][0] != np.argmax(np.bincount(gt_prim[b][gt_indices])):
-			# 	gt_prim_type_k = np.argmax(np.bincount(gt_prim[b][gt_indices]))
+			if gt_prim[b][gt_indices][0] != np.argmax(np.bincount(gt_prim[b][gt_indices])):     # 有些点云segment的primitive type不唯一，取众数
+				gt_prim_type_k = np.argmax(np.bincount(gt_prim[b][gt_indices]))
 			try:
 				predicted_prim_type_k = pred_prim[b][r]
 			except:
