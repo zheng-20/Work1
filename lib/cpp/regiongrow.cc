@@ -6,8 +6,123 @@
 #include <vector>
 #include <cstring>
 #include <unordered_map>
+#include <cmath>
 
 extern "C" {
+
+float distance(float* v1, float* v2, int numC) {
+	
+	float d = 0.0;
+	for (int i = 0; i < numC; ++i) {
+		d += (v1[i] - v2[i]) * (v1[i] - v2[i]);
+	}
+	float result = std::sqrt(d);
+	// std::cout << result << std::endl;
+	return result;
+}
+
+void getdata(float* a){
+	std::vector<std::vector<float>> f(2,std::vector<float>(4));
+	int k=0;
+	for(int i=0;i<2;i++){
+		for(int j=0;j<4;j++){
+			f[i][j]=a[k];
+			k++;
+		}
+	}
+	float result = distance(f[0].data(),f[1].data(),4);
+	std::cout << result << std::endl;
+}
+
+void RegionGrowing_with_embed(float* embedding, int numC, int* boundary, int* F, int numV, int numF, int* face_labels, int* output_mask, float score_thres, int* output_label) {
+	/*
+	embedding: 顶点的特征向量，维度为 numV * numC
+	numC: 特征向量的维度
+	*/
+	std::vector<std::vector<float>> point_embed(numV,std::vector<float>(numC));
+	for(int i=0;i<numV;i++){
+		for(int j=0;j<numC;j++){
+			point_embed[i][j]=embedding[i*numC+j];
+		}
+	}
+
+	std::vector<std::unordered_map<int, int> > v_neighbors(numV);
+	for (int i = 0; i < numF; ++i) {
+		for (int j = 0; j < 3; ++j) {
+			int b = boundary[i * 3 + j];	// 0 or 1，三角面片每个半边的边界预测
+			int v0 = F[i * 3 + j];
+			int v1 = F[i * 3 + (j + 1) % 3];	// 三角面片的三个顶点索引
+			v_neighbors[v0][v1] = b;
+			v_neighbors[v1][v0] = b;	// 邻接顶点和边界预测邻接图
+		}
+	}
+
+	// for (auto& nv : v_neighbors[0]) {
+	// 	std::cout << nv.first << std::endl;
+	// }
+
+	std::vector<int> mask(numV, -2);	// 初始化每个顶点的聚类标签为 -2
+	int num_boundary = 0;
+	for (int i = 0; i < numV; ++i) {
+		int is_boundary = 0;	// 记录当前顶点周围的边界半边数量
+		for (auto& info : v_neighbors[i]) {
+			if (info.second == 1) {
+				is_boundary += 1;
+			}
+		}
+		if (is_boundary >= v_neighbors[i].size() * score_thres) {
+			mask[i] = -1;
+			num_boundary += 1;
+		}	// 如果当前顶点周围的边界半边数量大于阈值，则将当前顶点标记为边界顶点
+	}
+
+	if (output_mask) {	// 如果需要输出边界顶点的 mask
+		int b = 0;
+		for (int i = 0; i < numV; ++i) {
+			output_mask[i] = (mask[i] == -1) ? 1 : 0;	// 将边界顶点的 mask 设置为 1
+			b += output_mask[i];
+		}
+	}
+
+	int num_labels = 0;	// 记录聚类的数量
+	for (int i = 0; i < mask.size(); ++i) {
+		if (mask[i] == -2) {
+			std::queue<int> q;
+			q.push(i);
+			mask[i] = num_labels;
+			while (!q.empty()) {
+				int v = q.front();
+				q.pop();
+				for (auto& nv : v_neighbors[v]) {
+					if (nv.second == 0 && mask[nv.first] == -2) {
+						if (distance(point_embed[v].data(),point_embed[nv.first].data(),numC)<0.1){
+							mask[nv.first] = num_labels;
+							q.push(nv.first);
+						}
+						// mask[nv.first] = num_labels;
+						// q.push(nv.first);
+					}
+				}
+			}
+			num_labels += 1;	// 从当前顶点开始，广度优先搜索，将所有与当前顶点相邻的非边界顶点标记为当前顶点的聚类
+		}
+	}
+
+	for (int i = 0; i < numF; ++i) {
+		int label = -1;
+		for (int j = 0; j < 3; ++j) {
+			if (mask[F[i * 3 + j]] >= 0) {
+				label = mask[F[i * 3 + j]];
+				break;
+			}
+		}
+		face_labels[i] = label;
+	}
+
+	for (int i = 0; i < numV; ++i) {
+		output_label[i] = mask[i];
+	}
+}
 
 void RegionGrowing(int* boundary, int* F, int numV, int numF, int* face_labels, int* output_mask, float score_thres, int* output_label) {
 	std::vector<std::unordered_map<int, int> > v_neighbors(numV);

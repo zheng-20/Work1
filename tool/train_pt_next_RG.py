@@ -31,7 +31,7 @@ from util.common_util import AverageMeter, intersectionAndUnionGPU, find_free_po
 from util.data_util_prim import collate_fn, collate_fn_limit, collate_dse_fn, collate_dse_fn_region
 # from util import transform as t
 from util.logger import get_logger
-from util.loss_util import compute_embedding_loss, mean_shift_gpu, compute_iou, compute_iou_RG, compute_boundary_loss_for_type, block_mean_shift_gpu
+from util.loss_util import compute_boundary_loss, compute_embedding_loss, mean_shift_gpu, compute_iou, compute_iou_RG, compute_boundary_loss_for_type, block_mean_shift_gpu, MeanShift_kernel_GPU
 from functools import partial
 from util.lr import MultiStepWithWarmup, PolyLR
 
@@ -376,6 +376,7 @@ def main_worker(gpu, ngpus_per_node, argss):
             if is_best:
                 logger.info('Best validation mIoU updated to: {:.4f}'.format(best_iou))
                 shutil.copyfile(filename, args.save_path + '/model/model_best.pth')
+                shutil.copyfile(filename, args.save_path + '/model/model_{}.pth'.format(epoch_log))
 
     if main_process():
         writer.close()
@@ -420,7 +421,8 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
             # loss = criterion(output, target)
             feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
-            boundary_loss = boundary_criterion(boundary_pred, boundary)
+            # boundary_loss = boundary_criterion(boundary_pred, boundary)
+            boundary_loss = compute_boundary_loss(boundary_pred, boundary)
             contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
             loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
             
@@ -570,7 +572,8 @@ def validate(val_loader, model, criterion, boundary_criterion):
             # loss = criterion(output, target)
             feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
-            boundary_loss = boundary_criterion(boundary_pred, boundary)
+            # boundary_loss = boundary_criterion(boundary_pred, boundary)
+            boundary_loss = compute_boundary_loss(boundary_pred, boundary)
             contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
             loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
 
@@ -603,12 +606,14 @@ def validate(val_loader, model, criterion, boundary_criterion):
                 b_gt = boundary[0:offset[j]]
                 prediction = boundary_pred_score[0:offset[j]]
                 type_pred = type_per_point[0:offset[j]]
+                embedding = primitive_embedding[0:offset[j]]
             else:
                 F = face[F_offset[j-1]:F_offset[j]]
                 V = coord[offset[j-1]:offset[j]]
                 b_gt = boundary[offset[j-1]:offset[j]]
                 prediction = boundary_pred_score[offset[j-1]:offset[j]]
                 type_pred = type_per_point[offset[j-1]:offset[j]]
+                embedding = primitive_embedding[offset[j-1]:offset[j]]
             F = F.numpy().astype('int32')
             face_labels = np.zeros((F.shape[0]), dtype='int32')
             masks = np.zeros((V.shape[0]), dtype='int32')
@@ -625,6 +630,10 @@ def validate(val_loader, model, criterion, boundary_criterion):
                     pb[edg[:,0]==k] = 1
                     pb[edg[:,1]==k] = 1
 
+            ms = MeanShift_kernel_GPU(bandwidth=args.bandwidth, batch_size=700)
+            point_embedding = ms.fit(embedding) # (n, 128)
+            point_embedding = point_embedding.data.cpu().numpy().astype('float32')
+            
             Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
             V.shape[0], F.shape[0], c_void_p(gt_face_labels.ctypes.data), c_void_p(gt_masks.ctypes.data),
             c_float(0.99), c_void_p(gt_output_label.ctypes.data))
@@ -635,9 +644,12 @@ def validate(val_loader, model, criterion, boundary_criterion):
                     pb[edg[:,0]==k] = 1
                     pb[edg[:,1]==k] = 1
 
-            Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
+            Regiongrow.RegionGrowing_with_embed(c_void_p(point_embedding.ctypes.data), point_embedding.shape[1], c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
             V.shape[0], F.shape[0], c_void_p(face_labels.ctypes.data), c_void_p(masks.ctypes.data),
             c_float(0.99), c_void_p(output_label.ctypes.data))
+            # Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
+            # V.shape[0], F.shape[0], c_void_p(face_labels.ctypes.data), c_void_p(masks.ctypes.data),
+            # c_float(0.99), c_void_p(output_label.ctypes.data))
 
             pp = np.argmax(type_pred.data.cpu().numpy(), axis=1)
 

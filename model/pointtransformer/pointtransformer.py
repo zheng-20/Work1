@@ -718,10 +718,10 @@ class PTSeg_RG(nn.Module):
         x3_prim = self.dec3_prim[1:]([p3, self.dec3[0]([p3, x3, o3], [p4, x4_prim, o4]), o3])[1]
         x2_prim = self.dec2_prim[1:]([p2, self.dec2[0]([p2, x2, o2], [p3, x3_prim, o3]), o2])[1]
         x1_prim = self.dec1_prim[1]([p1, self.dec1[0]([p1, x1, o1], [p2, x2_prim, o2]), o1], edges, boundary_pred)[1]
-        embedtype_fea = self.decoder_embedandtype(x1_prim)
+        # embedtype_fea = self.decoder_embedandtype(x1_prim)
         # # embedtype_fea += 0.2*boundary_fea
-        type_per_point = self.cls(embedtype_fea)
-        primitive_embedding = self.embedding(embedtype_fea)
+        type_per_point = self.cls(x1_prim)
+        primitive_embedding = self.embedding(x1_prim)
 
         return primitive_embedding, type_per_point, boundary
         # return type_per_point, boundary

@@ -34,7 +34,7 @@ TRAIN:
   max_num_neighbors: 34 # For KPConv
   ratio: 0.25
   k: 16
-  bandwidth: 1.61
+  bandwidth: 0.7
 
   # training
   aug: True
@@ -49,10 +49,10 @@ TRAIN:
   use_amp: False
   optimizer: AdamW 
   ignore_label: -100
-  train_gpu: [1]
+  train_gpu: [7]
   workers: 4  # data loader workers
   batch_size: 4  # batch size for training
-  batch_size_val: 4  # batch size for validation during training, memory and speed tradeoff
+  batch_size_val: 1  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.001
   epochs: 200
   start_epoch: 0
@@ -66,10 +66,12 @@ TRAIN:
   save_freq: 1
   save_path: runs/abc
   weight:  # path to initial weight (default: none)
-  resume:  # path to latest checkpoint (default: none)
+  resume: exp/abc_prim/train_128/model/model_last.pth # path to latest checkpoint (default: none)
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
   test_only: False  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
+  feat_loss_weight: 0.1
+  contrast_loss_weight: 0.1
 Distributed:
   dist_url: tcp://127.0.0.1:6789
   dist_backend: 'nccl'
