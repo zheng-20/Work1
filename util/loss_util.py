@@ -739,3 +739,39 @@ def compute_boundary_loss(pred, gt):
     loss = boundary_loss(pred, gt)
 
     return loss
+
+def boundary_contrastive_loss(features, labels, offset, margin_pull=0.5, margin_push=1.5):
+    pull_triplet_loss = torch.Tensor([0.0]).to(features.device)
+    push_triplet_loss = torch.Tensor([0.0]).to(features.device)
+    cnt = 0
+
+    for i in range(len(offset)):
+        if i == 0:
+            pred = features[0:offset[i]]
+            gt = labels[0:offset[i]]
+        else:
+            pred = features[offset[i-1]:offset[i]]
+            gt = labels[offset[i-1]:offset[i]]
+
+        # Split features into boundary and non-boundary points
+        boundary_indices = gt == 1
+        non_boundary_indices = gt == 0
+        boundary_features = pred[boundary_indices]
+        non_boundary_features = pred[non_boundary_indices]
+
+        # Calculate pairwise distances
+        boundary_distances = torch.cdist(boundary_features, boundary_features)
+        # non_boundary_distances = torch.cdist(non_boundary_features, non_boundary_features)
+        cross_distances = torch.cdist(boundary_features, non_boundary_features)
+
+        # Calculate triplet loss
+        pull_triplet_loss += torch.mean(F.relu(boundary_distances - margin_pull))
+        # pull_triplet_loss += torch.mean(F.relu(non_boundary_distances - margin_pull))
+        push_triplet_loss += torch.mean(F.relu(margin_push - cross_distances))
+
+    # Average the loss
+    pull_triplet_loss /= len(offset)
+    push_triplet_loss /= len(offset)
+    triplet_loss = pull_triplet_loss + push_triplet_loss
+
+    return triplet_loss

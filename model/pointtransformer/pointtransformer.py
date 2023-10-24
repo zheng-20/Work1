@@ -644,6 +644,12 @@ class PTSeg_RG(nn.Module):
         self.dec2_prim = self._make_dec_with_boundary(block, planes[1], 2, share_planes, nsample[1])  # fusion p3 and p2
         self.dec1_prim = self._make_dec_with_boundary(block, planes[0], 2, share_planes, nsample[0])  # fusion p2 and p1
 
+        self.dec5_embedding = self._make_dec_with_boundary(block, planes[4], 2, share_planes, nsample[4], True)  # transform p5
+        self.dec4_embedding = self._make_dec_with_boundary(block, planes[3], 2, share_planes, nsample[3])  # fusion p5 and p4
+        self.dec3_embedding = self._make_dec_with_boundary(block, planes[2], 2, share_planes, nsample[2])  # fusion p4 and p3
+        self.dec2_embedding = self._make_dec_with_boundary(block, planes[1], 2, share_planes, nsample[1])  # fusion p3 and p2
+        self.dec1_embedding = self._make_dec_with_boundary(block, planes[0], 2, share_planes, nsample[0])  # fusion p2 and p1
+
 
         self.decoder_embedandtype = nn.Sequential(nn.Linear(planes[0], planes[0]), nn.BatchNorm1d(planes[0]), nn.ReLU(inplace=True), nn.Linear(planes[0], planes[0]))
         self.decoder_boundary = nn.Sequential(nn.Linear(planes[0], planes[0]), nn.BatchNorm1d(planes[0]), nn.ReLU(inplace=True), nn.Linear(planes[0], planes[0]))
@@ -721,7 +727,13 @@ class PTSeg_RG(nn.Module):
         # embedtype_fea = self.decoder_embedandtype(x1_prim)
         # # embedtype_fea += 0.2*boundary_fea
         type_per_point = self.cls(x1_prim)
-        primitive_embedding = self.embedding(x1_prim)
+
+        x5_embedding = self.dec5_embedding[1:]([p5, self.dec5[0]([p5, x5, o5]), o5])[1]
+        x4_embedding = self.dec4_embedding[1:]([p4, self.dec4[0]([p4, x4, o4], [p5, x5_embedding, o5]), o4])[1]
+        x3_embedding = self.dec3_embedding[1:]([p3, self.dec3[0]([p3, x3, o3], [p4, x4_embedding, o4]), o3])[1]
+        x2_embedding = self.dec2_embedding[1:]([p2, self.dec2[0]([p2, x2, o2], [p3, x3_embedding, o3]), o2])[1]
+        x1_embedding = self.dec1_embedding[1]([p1, self.dec1[0]([p1, x1, o1], [p2, x2_embedding, o2]), o1], edges, boundary_pred)[1]
+        primitive_embedding = self.embedding(x1_embedding)
 
         return primitive_embedding, type_per_point, boundary
         # return type_per_point, boundary

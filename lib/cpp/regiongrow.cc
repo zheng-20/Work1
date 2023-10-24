@@ -62,12 +62,16 @@ void RegionGrowing_with_embed(float* embedding, int numC, int* boundary, int* F,
 	// }
 
 	std::vector<int> mask(numV, -2);	// 初始化每个顶点的聚类标签为 -2
+	std::vector<int> boundary_neighbors(numV, 0);	// 记录邻边周围点存在边界点的点，为1则表示当前点邻边存在边界点
 	int num_boundary = 0;
 	for (int i = 0; i < numV; ++i) {
 		int is_boundary = 0;	// 记录当前顶点周围的边界半边数量
 		for (auto& info : v_neighbors[i]) {
 			if (info.second == 1) {
 				is_boundary += 1;
+				if (boundary_neighbors[i] == 0) {
+					boundary_neighbors[i] = 1;
+				}
 			}
 		}
 		if (is_boundary >= v_neighbors[i].size() * score_thres) {
@@ -95,10 +99,19 @@ void RegionGrowing_with_embed(float* embedding, int numC, int* boundary, int* F,
 				q.pop();
 				for (auto& nv : v_neighbors[v]) {
 					if (nv.second == 0 && mask[nv.first] == -2) {
-						if (distance(point_embed[v].data(),point_embed[nv.first].data(),numC)<0.1){
+						if (boundary_neighbors[v] == 1) {	// 如果当前顶点邻边存在边界点，则判断当前顶点与邻边点的特征向量距离，如果小于阈值，则将邻边点标记为当前顶点的聚类
+							if (distance(point_embed[v].data(),point_embed[nv.first].data(),numC)<0.1){
+								mask[nv.first] = num_labels;
+								q.push(nv.first);
+							}
+						} else {
 							mask[nv.first] = num_labels;
 							q.push(nv.first);
 						}
+						// if (distance(point_embed[v].data(),point_embed[nv.first].data(),numC)<0.1){
+						// 	mask[nv.first] = num_labels;
+						// 	q.push(nv.first);
+						// }
 						// mask[nv.first] = num_labels;
 						// q.push(nv.first);
 					}

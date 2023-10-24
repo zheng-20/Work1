@@ -31,7 +31,7 @@ from util.common_util import AverageMeter, intersectionAndUnionGPU, find_free_po
 from util.data_util_prim import collate_fn, collate_fn_limit, collate_dse_fn, collate_dse_fn_region
 # from util import transform as t
 from util.logger import get_logger
-from util.loss_util import compute_boundary_loss, compute_embedding_loss, mean_shift_gpu, compute_iou, compute_iou_RG, compute_boundary_loss_for_type, block_mean_shift_gpu, MeanShift_kernel_GPU
+from util.loss_util import boundary_contrastive_loss, compute_boundary_loss, compute_embedding_loss, mean_shift_gpu, compute_iou, compute_iou_RG, compute_boundary_loss_for_type, block_mean_shift_gpu, MeanShift_kernel_GPU
 from functools import partial
 from util.lr import MultiStepWithWarmup, PolyLR
 
@@ -150,6 +150,13 @@ def main_worker(gpu, ngpus_per_node, argss):
     # optimizer = torch.optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
     # scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[int(args.epochs*0.6), int(args.epochs*0.8)], gamma=0.1)
 
+    # # freeze backbone
+    # for name, param in model.named_parameters():
+    #     if "embedding" not in name:
+    #         param.requires_grad = False
+    # for name, param in model.named_parameters():
+    #     print(f'Parameter: {name}, Requires gradient: {param.requires_grad}')
+
     # set optimizer
     if args.optimizer == 'SGD':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -210,7 +217,7 @@ def main_worker(gpu, ngpus_per_node, argss):
                 logger.info("=> loading weight '{}'".format(args.weight))
             checkpoint = torch.load(args.weight)
             # boundarymodel.load_state_dict(checkpoint['boundary_state_dict'])
-            model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
             if main_process():
                 logger.info("=> loaded weight '{}'".format(args.weight))
         else:
@@ -421,10 +428,12 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
             # loss = criterion(output, target)
             feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
-            # boundary_loss = boundary_criterion(boundary_pred, boundary)
-            boundary_loss = compute_boundary_loss(boundary_pred, boundary)
+            boundary_loss = boundary_criterion(boundary_pred, boundary)
+            # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
+            # contrast_loss, type_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()  # for debug
             contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
-            loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
+            # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
+            loss = feat_loss
             
         optimizer.zero_grad()
         # loss.backward()
@@ -544,8 +553,9 @@ def validate(val_loader, model, criterion, boundary_criterion):
     contrast_loss_meter = AverageMeter()
     s_iou_meter = AverageMeter()
     type_iou_meter = AverageMeter()
+    use_embed_counter = 0
 
-    torch.cuda.empty_cache()
+    # torch.cuda.empty_cache()
 
     # boundarymodel.eval()
     model.eval()
@@ -571,10 +581,12 @@ def validate(val_loader, model, criterion, boundary_criterion):
             primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges)
             # loss = criterion(output, target)
             feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            # contrast_loss, type_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()
             type_loss = criterion(type_per_point, semantic)
-            # boundary_loss = boundary_criterion(boundary_pred, boundary)
-            boundary_loss = compute_boundary_loss(boundary_pred, boundary)
+            boundary_loss = boundary_criterion(boundary_pred, boundary)
+            # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
             contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
             loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
 
         # output = output.max(1)[1]
@@ -616,10 +628,12 @@ def validate(val_loader, model, criterion, boundary_criterion):
                 embedding = primitive_embedding[offset[j-1]:offset[j]]
             F = F.numpy().astype('int32')
             face_labels = np.zeros((F.shape[0]), dtype='int32')
+            # face_labels_with_embed = np.zeros((F.shape[0]), dtype='int32')
             masks = np.zeros((V.shape[0]), dtype='int32')
             gt_face_labels = np.zeros((F.shape[0]), dtype='int32')
             gt_masks = np.zeros((V.shape[0]), dtype='int32')
             output_label = np.zeros((V.shape[0]), dtype='int32')
+            # output_label_with_embed = np.zeros((V.shape[0]), dtype='int32')
             gt_output_label = np.zeros((V.shape[0]), dtype='int32')
             b_gt = b_gt.data.cpu().numpy().astype('int32')
             b = (prediction[:,1]>prediction[:,0]).data.cpu().numpy().astype('int32')
@@ -644,12 +658,13 @@ def validate(val_loader, model, criterion, boundary_criterion):
                     pb[edg[:,0]==k] = 1
                     pb[edg[:,1]==k] = 1
 
-            Regiongrow.RegionGrowing_with_embed(c_void_p(point_embedding.ctypes.data), point_embedding.shape[1], c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
+            # # 特征+边界聚类
+            # Regiongrow.RegionGrowing_with_embed(c_void_p(point_embedding.ctypes.data), point_embedding.shape[1], c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
+            # V.shape[0], F.shape[0], c_void_p(face_labels_with_embed.ctypes.data), c_void_p(masks.ctypes.data),
+            # c_float(0.99), c_void_p(output_label_with_embed.ctypes.data))
+            Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
             V.shape[0], F.shape[0], c_void_p(face_labels.ctypes.data), c_void_p(masks.ctypes.data),
             c_float(0.99), c_void_p(output_label.ctypes.data))
-            # Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
-            # V.shape[0], F.shape[0], c_void_p(face_labels.ctypes.data), c_void_p(masks.ctypes.data),
-            # c_float(0.99), c_void_p(output_label.ctypes.data))
 
             pp = np.argmax(type_pred.data.cpu().numpy(), axis=1)
 
@@ -699,6 +714,12 @@ def validate(val_loader, model, criterion, boundary_criterion):
             # semantic_faces = semantic_faces_gt
 
             s_iou_, p_iou_ = compute_iou_RG(gt_face_labels, face_labels, semantic_faces, semantic_faces_gt)
+            # s_iou_with_embed, p_iou_with_embed = compute_iou_RG(gt_face_labels, face_labels_with_embed, semantic_faces, semantic_faces_gt)
+            # if s_iou_with_embed > s_iou_:
+            #     print('use embed:{}, improve:{:.4f}'.format(use_embed_counter, s_iou_with_embed - s_iou_))
+            #     s_iou_ = s_iou_with_embed
+            #     p_iou_ = p_iou_with_embed
+            #     use_embed_counter += 1
             test_siou.append(s_iou_)
             test_piou.append(p_iou_)
         
@@ -772,4 +793,18 @@ def validate(val_loader, model, criterion, boundary_criterion):
 if __name__ == '__main__':
     import gc
     gc.collect()
-    main()
+    # main()
+    try:
+        main()
+    except Exception as e:
+        # 添加异常处理，如果出现异常，发送微信通知
+        print(str(e))
+        headers = {"Authorization": "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOjExNjc4OCwidXVpZCI6ImQzZjBmOGIyLWJmNWMtNDkyMy1hMzMyLTEyN2ViNTg4ZDEyMCIsImlzX2FkbWluIjpmYWxzZSwiaXNfc3VwZXJfYWRtaW4iOmZhbHNlLCJzdWJfbmFtZSI6IiIsInRlbmFudCI6ImF1dG9kbCIsInVwayI6IiJ9.ma-DgwI8MuctNwGWyoVoIVfr7r0Gt64nwJA_U4FToy2lg4ueMhWPlybP0UxP-yKw5_KpfNil4EcWe7t5Wc5Irw"}
+        resp = requests.post("https://www.autodl.com/api/v1/wechat/message/send",
+            json={
+                "title": "A100: The training has stopped",
+                "name": "Your network training has made an error",
+                "content": str(e)
+            }, headers = headers)
+        import ipdb
+        ipdb.set_trace()
