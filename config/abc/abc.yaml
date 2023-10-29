@@ -6,7 +6,7 @@ DATA:
   fea_dim: 6
   voxel_size: 0.005
   voxel_max: 80000
-  train_loop: 2
+  train_loop: 4
   val_loop: 0.02
 
 TRAIN:
@@ -34,7 +34,7 @@ TRAIN:
   # max_num_neighbors: 34 # For KPConv
   # ratio: 0.25
   k: 16
-  bandwidth: 1.31
+  bandwidth: 0.7
 
   # training
   # aug: True
@@ -46,15 +46,15 @@ TRAIN:
   # warmup: linear
   # warmup_iters: 1500
   # warmup_ratio: 0.000001
-  use_amp: True
+  use_amp: False
   optimizer: AdamW 
   ignore_label: -100
   train_gpu: [7]
-  workers: 16  # data loader workers
-  batch_size: 32  # batch size for training
-  batch_size_val: 4  # batch size for validation during training, memory and speed tradeoff
+  workers: 4  # data loader workers
+  batch_size: 24  # batch size for training
+  batch_size_val: 1  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.001
-  epochs: 400
+  epochs: 200
   start_epoch: 0
   # step_epoch: 30
   # multiplier: 0.1
@@ -70,8 +70,8 @@ TRAIN:
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
   test_only: False  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
-  feat_loss_weight: 0.1
-  contrast_loss_weight: 0.1
+  feat_loss_weight: 1.0
+  contrast_loss_weight: 1.0
 Distributed:
   dist_url: tcp://127.0.0.1:6789
   dist_backend: 'nccl'

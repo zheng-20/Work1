@@ -421,19 +421,19 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
-            primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges)
+            type_per_point, boundary_pred = model([coord, normals, offset], edges, boundary.int())
             assert type_per_point.shape[1] == args.classes
             if semantic.shape[-1] == 1:
                 semantic = semantic[:, 0]  # for cls
+            feat_loss, contrast_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()  # for debug
             # loss = criterion(output, target)
-            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
             boundary_loss = boundary_criterion(boundary_pred, boundary)
             # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
-            # contrast_loss, type_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()  # for debug
-            contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
             # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
-            loss = feat_loss
+            loss = type_loss + boundary_loss
             
         optimizer.zero_grad()
         # loss.backward()
@@ -578,16 +578,16 @@ def validate(val_loader, model, criterion, boundary_criterion):
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
 
-            primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges)
+            type_per_point, boundary_pred = model([coord, normals, offset], edges, boundary.int(), is_train=True)
+            contrast_loss, feat_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()
             # loss = criterion(output, target)
-            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
-            # contrast_loss, type_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()
+            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             type_loss = criterion(type_per_point, semantic)
             boundary_loss = boundary_criterion(boundary_pred, boundary)
             # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
-            contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
             # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
-            loss = type_loss + boundary_loss + args.feat_loss_weight * feat_loss + args.contrast_loss_weight * contrast_loss
+            loss = type_loss + boundary_loss
 
         # output = output.max(1)[1]
         n = coord.size(0)
@@ -618,14 +618,14 @@ def validate(val_loader, model, criterion, boundary_criterion):
                 b_gt = boundary[0:offset[j]]
                 prediction = boundary_pred_score[0:offset[j]]
                 type_pred = type_per_point[0:offset[j]]
-                embedding = primitive_embedding[0:offset[j]]
+                # embedding = primitive_embedding[0:offset[j]]
             else:
                 F = face[F_offset[j-1]:F_offset[j]]
                 V = coord[offset[j-1]:offset[j]]
                 b_gt = boundary[offset[j-1]:offset[j]]
                 prediction = boundary_pred_score[offset[j-1]:offset[j]]
                 type_pred = type_per_point[offset[j-1]:offset[j]]
-                embedding = primitive_embedding[offset[j-1]:offset[j]]
+                # embedding = primitive_embedding[offset[j-1]:offset[j]]
             F = F.numpy().astype('int32')
             face_labels = np.zeros((F.shape[0]), dtype='int32')
             # face_labels_with_embed = np.zeros((F.shape[0]), dtype='int32')
@@ -644,9 +644,9 @@ def validate(val_loader, model, criterion, boundary_criterion):
                     pb[edg[:,0]==k] = 1
                     pb[edg[:,1]==k] = 1
 
-            ms = MeanShift_kernel_GPU(bandwidth=args.bandwidth, batch_size=700)
-            point_embedding = ms.fit(embedding) # (n, 128)
-            point_embedding = point_embedding.data.cpu().numpy().astype('float32')
+            # ms = MeanShift_kernel_GPU(bandwidth=args.bandwidth, batch_size=700)
+            # point_embedding = ms.fit(embedding) # (n, 128)
+            # point_embedding = point_embedding.data.cpu().numpy().astype('float32')
             
             Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
             V.shape[0], F.shape[0], c_void_p(gt_face_labels.ctypes.data), c_void_p(gt_masks.ctypes.data),

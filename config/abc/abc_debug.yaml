@@ -6,69 +6,69 @@ DATA:
   fea_dim: 6
   voxel_size: 0.005
   voxel_max: 80000
-  train_loop: 4
-  val_loop: 1
+  train_loop: 0.02
+  val_loop: 0.02
 
 TRAIN:
   #arch
   arch: pt_next_RG
-  stem_transformer: True
-  use_xyz: True
+  # stem_transformer: True
+  # use_xyz: True
   sync_bn: True  # adopt sync_bn or not
-  rel_query: True
-  rel_key: True
-  rel_value: True
-  quant_size: 0.01
-  downsample_scale: 8
-  num_layers: 4 
-  patch_size: 1 
-  window_size: 1
-  depths: [2, 2, 6, 2] 
-  channels: [48, 96, 192, 384] 
-  num_heads: [3, 6, 12, 24] 
-  up_k: 3
-  drop_path_rate: 0.3
-  concat_xyz: True
-  grid_size: 0.01
-  max_batch_points: 1000000
-  max_num_neighbors: 34 # For KPConv
-  ratio: 0.25
+  # rel_query: True
+  # rel_key: True
+  # rel_value: True
+  # quant_size: 0.01
+  # downsample_scale: 8
+  # num_layers: 4 
+  # patch_size: 1 
+  # window_size: 1
+  # depths: [2, 2, 6, 2] 
+  # channels: [48, 96, 192, 384] 
+  # num_heads: [3, 6, 12, 24] 
+  # up_k: 3
+  # drop_path_rate: 0.3
+  # concat_xyz: True
+  # grid_size: 0.01
+  # max_batch_points: 1000000
+  # max_num_neighbors: 34 # For KPConv
+  # ratio: 0.25
   k: 16
   bandwidth: 0.7
 
   # training
-  aug: True
-  transformer_lr_scale: 0.1
-  jitter_sigma: 0.005
-  jitter_clip: 0.02
+  # aug: True
+  # transformer_lr_scale: 0.1
+  # jitter_sigma: 0.005
+  # jitter_clip: 0.02
   scheduler_update: epoch 
   scheduler: Cosine 
-  warmup: linear
-  warmup_iters: 1500
-  warmup_ratio: 0.000001
-  use_amp: False
+  # warmup: linear
+  # warmup_iters: 1500
+  # warmup_ratio: 0.000001
+  use_amp: True
   optimizer: AdamW 
   ignore_label: -100
-  train_gpu: [7]
-  workers: 4  # data loader workers
-  batch_size: 4  # batch size for training
+  train_gpu: [3]
+  workers: 1  # data loader workers
+  batch_size: 2  # batch size for training
   batch_size_val: 1  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.001
   epochs: 200
   start_epoch: 0
-  step_epoch: 30
-  multiplier: 0.1
+  # step_epoch: 30
+  # multiplier: 0.1
   momentum: 0.9
   weight_decay: 0.01
-  drop_rate: 0.5
+  # drop_rate: 0.5
   manual_seed: 123
   print_freq: 1
   save_freq: 1
   save_path: runs/abc
   weight:  # path to initial weight (default: none)
-  resume: exp/abc_prim/train_128/model/model_last.pth # path to latest checkpoint (default: none)
+  resume: exp/abc_prim/train_RG1/model/model_best.pth # path to latest checkpoint (default: none)
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
-  test_only: False  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
+  test_only: True  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
   feat_loss_weight: 0.1
   contrast_loss_weight: 0.1
@@ -80,13 +80,13 @@ Distributed:
   rank: 0
 
 TEST:
-  test_list: dataset/s3dis/list/val5.txt
-  test_list_full: dataset/s3dis/list/val5_full.txt
+  # test_list: dataset/s3dis/list/val5.txt
+  # test_list_full: dataset/s3dis/list/val5_full.txt
   split: val  # split in [train, val and test]
   test_gpu: [1]
   test_workers: 4
   batch_size_test: 6
-  model_path: /home/fz20/project/point-transformer-boundary/exp/abc/runs-unet-base/model/model_best.pth # Fill the path of the trained .pth file model
+  model_path:  # Fill the path of the trained .pth file model
   save_folder: exp/abc/test # Fill the path to store the .npy files for each scene
   names_path: data/s3dis/s3dis_names.txt
   visual: True

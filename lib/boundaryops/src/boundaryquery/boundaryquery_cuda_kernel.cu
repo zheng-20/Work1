@@ -206,22 +206,29 @@ __global__ void boundaryquery_cuda_kernel(int m, int nsample, int b, const float
         }
     }
 
-    if (flag){      //边界点或小实例内情况直接knn
-        for(int i = start; i < end; i++){
-            float x = xyz[i * 3 + 0];
-            float y = xyz[i * 3 + 1];
-            float z = xyz[i * 3 + 2];
-            float d2 = (new_x - x) * (new_x - x) + (new_y - y) * (new_y - y) + (new_z - z) * (new_z - z);
-            if (d2 < best_dist[0]){
-                best_dist[0] = d2;
-                best_idx[0] = i;
-                reheap(best_dist, best_idx, nsample);
-            }
-        }
-        heap_sort(best_dist, best_idx, nsample);
+    if (flag){      
+        // //边界点或小实例内情况直接knn
+        // for(int i = start; i < end; i++){
+        //     float x = xyz[i * 3 + 0];
+        //     float y = xyz[i * 3 + 1];
+        //     float z = xyz[i * 3 + 2];
+        //     float d2 = (new_x - x) * (new_x - x) + (new_y - y) * (new_y - y) + (new_z - z) * (new_z - z);
+        //     if (d2 < best_dist[0]){
+        //         best_dist[0] = d2;
+        //         best_idx[0] = i;
+        //         reheap(best_dist, best_idx, nsample);
+        //     }
+        // }
+        // heap_sort(best_dist, best_idx, nsample);
+        // for(int i = 0; i < nsample; i++){
+        //     idx[i] = best_idx[i];
+        //     dist2[i] = best_dist[i];
+        // }
+
+        // 边界点或小实例内，将最近邻点索引都设为当前点在数据集中的索引
         for(int i = 0; i < nsample; i++){
-            idx[i] = best_idx[i];
-            dist2[i] = best_dist[i];
+            idx[i] = pt_idx;
+            dist2[i] = 0;
         }
     }else{
         for(int i = 0; i < nsample; i++){
