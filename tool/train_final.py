@@ -809,7 +809,7 @@ def validate(val_loader, model, criterion, boundary_criterion):
 
     if main_process():
         logger.info('Val result: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(mIoU, mAcc, allAcc))
-        for i in range(args.classes):
+        for i in range(args.classes - 4):
             logger.info('Class_{} Result: iou/accuracy {:.4f}/{:.4f}.'.format(i, iou_class[i], accuracy_class[i]))
         logger.info('Val result: Seg_mIoU/Type_mIoU {:.4f}/{:.4f}.'.format(s_iou_meter.avg, type_iou_meter.avg))
         logger.info('Val result(cluster): Seg_mIoU/Type_mIoU {:.4f}/{:.4f}.'.format(s_iou_cluster_meter.avg, type_iou_cluster_meter.avg))
