@@ -83,13 +83,13 @@ def compute_embedding_loss(pred_feat, gt_label, offset, t_pull=0.5, t_push=1.5):
             gt = gt_label[offset[i-1]:offset[i]]
         
     # for i in range(batch_size):
-        gt = gt - 1
-        num_class = gt.max() + 1
+        # gt = gt - 1
+        num_class = gt.max() + 2
 
         embeddings = []
 
         for j in range(num_class):
-            mask = (gt == j)
+            mask = (gt == j - 1)
             feature = pred[mask]
             if len(feature) == 0:
                 continue
@@ -133,6 +133,175 @@ def compute_embedding_loss(pred_feat, gt_label, offset, t_pull=0.5, t_push=1.5):
     push_loss = push_loss / len(offset)
     loss = pull_loss + push_loss
     return loss, pull_loss, push_loss
+
+def compute_embedding_loss_boundary(point, boundary, pred_feat, gt_label, offset, t_pull=0.5, t_push=1.5):
+    '''
+    pred_feat: (N, K)
+    gt_label: (N)
+    '''
+    num_pts, feat_dim = pred_feat.shape
+    device = pred_feat.device
+    pull_loss = torch.Tensor([0.0]).to(device)
+    push_loss = torch.Tensor([0.0]).to(device)
+    for i in range(len(offset)):
+        if i == 0:
+            pred = pred_feat[0:offset[i]]
+            gt = gt_label[0:offset[i]]
+            b = boundary[0:offset[i]]
+            p = point[0:offset[i]]
+            offset_i = offset[i]
+        else:
+            pred = pred_feat[offset[i-1]:offset[i]]
+            gt = gt_label[offset[i-1]:offset[i]]
+            b = boundary[offset[i-1]:offset[i]]
+            p = point[offset[i-1]:offset[i]]
+            offset_i = offset[i] - offset[i-1]
+        
+    # for i in range(batch_size):
+        # gt = gt - 1
+        num_class = gt.max()
+
+        embeddings = []
+        b_embeddings = []
+
+        # 若点knn中有边界点，则该点作为边界附近的点，作mask
+        nsample = 4
+        neighbor_idx, _ = pointops.knnquery(nsample, p, p, offset_i, offset_i)
+        neighbor_b = b[neighbor_idx.long()]
+        neighbor_b = torch.sum(neighbor_b, dim=1)
+        b_mask = (neighbor_b > 0)
+
+        for j in range(num_class):
+            mask = (gt == j + 1)
+            feature = pred[mask]
+            if len(feature) == 0:
+                continue
+            embeddings.append(feature)  # (M, K)
+            b_feature = pred[mask & b_mask]
+            b_embeddings.append(b_feature)
+
+        centers = []
+
+        for feature in embeddings:
+            center = torch.mean(feature, dim=0).view(1, -1)
+            centers.append(center)
+
+        # intra-embedding loss
+        pull_loss_tp = torch.Tensor([0.0]).to(device)
+        for b_feature, feature, center in zip(b_embeddings, embeddings, centers):
+            dis = torch.norm(feature - center, 2, dim=1) - t_pull
+            dis = F.relu(dis)
+            pull_loss_tp += torch.mean(dis)
+            if len(b_feature) == 0:
+                pull_loss_tp += .0
+                continue
+            dis = torch.norm(b_feature - center, 2, dim=1) - t_pull
+            dis = F.relu(dis) * 0.2
+            pull_loss_tp += torch.mean(dis)
+
+        pull_loss = pull_loss + pull_loss_tp / (len(embeddings) + len(b_embeddings))
+
+        # inter-embedding loss
+        try:
+            centers = torch.cat(centers, dim=0)  # (num_class, K)
+        except:
+            import ipdb
+            ipdb.set_trace()
+
+        if centers.shape[0] == 1:
+            continue
+
+        dst = torch.norm(centers[:, None, :] - centers[None, :, :], 2, dim=2)
+
+        eye = torch.eye(centers.shape[0]).to(device)
+        pair_distance = torch.masked_select(dst, eye == 0)
+
+        pair_distance = t_push - pair_distance
+        pair_distance = F.relu(pair_distance)
+        push_loss += torch.mean(pair_distance)
+
+    pull_loss = pull_loss / len(offset)
+    push_loss = push_loss / len(offset)
+    loss = pull_loss + push_loss
+    return loss, pull_loss, push_loss
+
+
+def boundary_contrast_loss(point, boundary, pred_feat, gt_label, offset, t_pull=0.5, t_push=1.5):
+    '''
+    pred_feat: (N, K)
+    gt_label: (N)
+    '''
+    num_pts, feat_dim = pred_feat.shape
+    device = pred_feat.device
+    pull_loss = torch.Tensor([0.0]).to(device)
+
+    for i in range(len(offset)):
+        if i == 0:
+            pred = pred_feat[0:offset[i]]
+            gt = gt_label[0:offset[i]]
+            b = boundary[0:offset[i]]
+            p = point[0:offset[i]]
+            offset_i = offset[i]
+        else:
+            pred = pred_feat[offset[i-1]:offset[i]]
+            gt = gt_label[offset[i-1]:offset[i]]
+            b = boundary[offset[i-1]:offset[i]]
+            p = point[offset[i-1]:offset[i]]
+            offset_i = offset[i] - offset[i-1]
+        
+    # for i in range(batch_size):
+        # gt = gt - 1
+        num_class = gt.max() + 2
+
+        embeddings = []
+        b_embedding = []
+
+        # 若点knn中有边界点，则该点作为边界附近的点，作mask
+        nsample = 4
+        neighbor_idx, _ = pointops.knnquery(nsample, p, p, offset_i, offset_i)
+        neighbor_b = b[neighbor_idx.long()]
+        neighbor_b = torch.sum(neighbor_b, dim=1)
+        b_mask = (neighbor_b > 0)
+
+        for j in range(num_class):
+            mask = (gt == j - 1)
+            feature = pred[mask]
+            if len(feature) == 0:
+                continue
+            embeddings.append(feature)  # (M, K)
+            b_feature = pred[mask & b_mask]
+            b_embedding.append(b_feature)
+
+        centers = []
+
+        for feature in embeddings:
+            center = torch.mean(feature, dim=0).view(1, -1)
+            centers.append(center)
+
+        # intra-embedding loss
+        pull_loss_tp = torch.Tensor([0.0]).to(device)
+        for feature, center in zip(b_embedding, centers):
+            if len(feature) == 0:
+                pull_loss_tp += .0
+                continue
+            dis = torch.norm(feature - center, 2, dim=1) - t_pull
+            dis = F.relu(dis)
+            pull_loss_tp += torch.mean(dis)
+
+        pull_loss = pull_loss + pull_loss_tp / len(b_embedding)
+
+    pull_loss = pull_loss / len(offset)
+
+    loss = pull_loss
+    return loss
+
+def compute_type_loss(pred, gt, criterion):
+
+    valid_class = (gt != -1)
+    pred = pred[valid_class]
+    gt = gt[valid_class]
+    loss = criterion(pred, gt)
+    return loss
 
 def mean_shift(x, bandwidth):
     # x: [N, f]
@@ -216,7 +385,7 @@ class MeanShift_GPU():
                 
             labels = np.array(labels)
             centers = np.array(centers)
-            return labels,centers
+            return labels,centers,X
         
     def gaussian(self,dist,bandwidth):
         return exp(-0.5*((dist/bandwidth))**2)/(bandwidth*math.sqrt(2*math.pi))
@@ -266,7 +435,7 @@ def mean_shift_gpu(x, offset, bandwidth):
     # for i in range(b):
         # print ('Mean shift clustering, might take some time ...')
         tic = time.time()
-        labels, centers = ms.fit(pred)
+        labels, centers, X_fea = ms.fit(pred)
         # print ('[{}/{}] time for Mean shift clustering'.format(i+1, len(offset)), time.time() - tic)
         if i == 0:
             # IDX[0:offset[i]] = v(labels)
@@ -279,7 +448,7 @@ def mean_shift_gpu(x, offset, bandwidth):
 
         # num_clusters = cluster_centers.shape[0]
         # print(num_clusters)
-    return IDX
+    return IDX, X_fea
 
 def block_mean_shift_gpu(coord, x, offset, bandwidth):
     # x: [N, f]
@@ -489,14 +658,14 @@ def SIOU_matched_segments(target, pred_labels, primitives_pred, primitives, weig
 	iou is computed only over the matched segments.
 	"""
 	# 2 is open spline and 9 is close spline
-	primitives[primitives == 0] = 9
-	primitives[primitives == 6] = 9
-	primitives[primitives == 7] = 9
+	primitives[primitives == 9] = 0
+	primitives[primitives == 6] = 0
+	primitives[primitives == 7] = 0
 	primitives[primitives == 8] = 2
 
-	primitives_pred[primitives_pred == 0] = 9
-	primitives_pred[primitives_pred == 6] = 9
-	primitives_pred[primitives_pred == 7] = 9
+	primitives_pred[primitives_pred == 9] = 0
+	primitives_pred[primitives_pred == 6] = 0
+	primitives_pred[primitives_pred == 7] = 0
 	primitives_pred[primitives_pred == 8] = 2
 
 	labels_one_hot = to_one_hot(target)
@@ -775,3 +944,137 @@ def boundary_contrastive_loss(features, labels, offset, margin_pull=0.5, margin_
     triplet_loss = pull_triplet_loss + push_triplet_loss
 
     return triplet_loss
+
+
+# HPNet metrics
+def get_one_hot(targets, nb_classes):
+    #res = np.eye(nb_classes)[np.array(targets, dtype=np.int8).reshape(-1)]
+    # check none-type
+    #if targets.min() == -1:
+    #   idx = np.argwhere(targets == -1)
+    #   res[idx] = 0
+    #return res.reshape(list(targets.shape)+[nb_classes])
+
+    one_hot = torch.nn.functional.one_hot(targets, nb_classes)
+
+    return one_hot
+
+def hungarian_matching(W_pred, W_gt):
+    # This non-tf function does not backprob gradient, only output matching indices
+    # W_pred - NxK
+    # W_gt - NxK'
+    # Output: matching_indices
+    # The matching does not include gt background instance
+    # calculate RIoU
+    n_points = W_pred.shape[0]
+    #n_max_labels = min(W_gt.shape[1], W_pred.shape[1])
+    #matching_indices = np.zeros([n_max_labels], dtype=np.int32)
+
+    dot = np.sum(np.expand_dims(W_pred, axis=2) * np.expand_dims(W_gt, axis=1),
+                 axis=0)  # K'xK
+    denominator = np.expand_dims(np.sum(W_pred, axis=0),
+                                 axis=1) + np.expand_dims(np.sum(W_gt, axis=0),
+                                                          axis=0) - dot
+    cost = dot / np.maximum(denominator, DIVISION_EPS)  # K'xK
+    row_ind, col_ind = solve_dense(-cost)  # want max solution
+    #matching_indices[b, :n_gt_labels] = col_ind
+
+    return row_ind, col_ind
+
+DIVISION_EPS = 1e-10
+def compute_riou(W_pred, W_gt, pred_ind, gt_ind):
+    # W_pred - NxK
+    # W_gt - NxK'
+
+    N, _ = W_pred.shape
+
+    pred_ind = torch.LongTensor(pred_ind).unsqueeze(0).repeat(N, 1).to(
+        W_pred.device)
+    gt_ind = torch.LongTensor(gt_ind).unsqueeze(0).repeat(N, 1).to(W_gt.device)
+
+    W_pred_reordered = torch.gather(W_pred, -1, pred_ind)
+    W_gt_reordered = torch.gather(W_gt, -1, gt_ind)
+
+    dot = torch.sum(W_gt_reordered * W_pred_reordered, dim=0)  # K
+    denominator = torch.sum(W_gt_reordered, dim=0) + torch.sum(
+        W_pred_reordered, dim=0) - dot
+    mIoU = dot / (denominator + DIVISION_EPS)  # K
+    return mIoU
+
+def compute_miou(cluster_pred, I_gt):
+    '''
+    compute per-primitive riou loss
+    cluster_pred: (1, N)
+    I_gt: (1, N), must contains -1
+    '''
+    assert (cluster_pred.shape[0] == 1)
+
+    one_hot_pred = get_one_hot(cluster_pred,
+                               cluster_pred.max() + 1)[0]  # (N, K)
+
+    if I_gt.min() == -1:
+        one_hot_gt = get_one_hot(I_gt + 1,
+                                 I_gt.max() +
+                                 2)[0][:, 1:]  # (N, K'), remove background
+    else:
+        one_hot_gt = get_one_hot(I_gt, I_gt.max() + 1)[0]
+
+    pred_ind, gt_ind = hungarian_matching(npy(one_hot_pred), npy(one_hot_gt))
+
+    riou = compute_riou(one_hot_pred, one_hot_gt, pred_ind, gt_ind)
+    k = riou.shape[0]
+    mean_riou = riou.sum() / k
+    return mean_riou
+
+def compute_type_miou_abc(type_per_point, T_gt, cluster_pred, I_gt):
+    '''
+    compute per-primitive-instance type iou
+    type_per_point: (1, N, K), K = 6/10
+    T_gt: (1, N)
+    '''
+    assert (type_per_point.shape[0] == 1)
+    
+    # get T_pred: (1, N)
+    if len(type_per_point.shape) == 3:
+        B, N, _ = type_per_point.shape
+        T_pred = torch.argmax(type_per_point, dim=-1) # (B, N)
+    else:
+        T_pred = type_per_point
+     
+    T_pred[T_pred == 6] = 0
+    T_pred[T_pred == 7] = 0
+    T_pred[T_pred == 9] = 0
+    T_pred[T_pred == 8] = 2
+    
+    T_gt[T_gt == 6] = 0
+    T_gt[T_gt == 7] = 0
+    T_gt[T_gt == 9] = 0
+    T_gt[T_gt == 8] = 2
+   
+    one_hot_pred = get_one_hot(cluster_pred,
+                               cluster_pred.max() + 1)[0]  # (N, K)
+
+    if I_gt.min() == -1:
+        # (N, K'), remove background
+        one_hot_gt = get_one_hot(I_gt + 1,
+                                 I_gt.max() + 2)[0][:, 1:]  
+    else:
+        one_hot_gt = get_one_hot(I_gt, I_gt.max() + 1)[0]
+
+    pred_ind, gt_ind = hungarian_matching(npy(one_hot_pred), npy(one_hot_gt))
+    type_iou = torch.Tensor([0.0]).to(T_gt.device)
+    cnt = 0
+    riou = compute_riou(one_hot_pred, one_hot_gt, pred_ind, gt_ind)
+    for p_ind, g_ind in zip(pred_ind, gt_ind):
+        gt_type_label = T_gt[I_gt == g_ind].mode()[0]
+        try:
+            pred_type_label = T_pred[cluster_pred == p_ind].mode()[0]
+        except:
+            continue
+        if gt_type_label == pred_type_label:
+            type_iou += 1
+           
+        cnt += 1
+    
+    type_iou /= cnt
+    return type_iou
