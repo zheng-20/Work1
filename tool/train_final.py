@@ -312,7 +312,7 @@ def main_worker(gpu, ngpus_per_node, argss):
         scaler = None
 
     if args.test_only:
-        s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
+        s_miou_cluster, p_miou_cluster, s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
         # print("s_miou: {}, p_miou: {}".format(s_miou, p_miou))
         return 0
         
