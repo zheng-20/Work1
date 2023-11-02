@@ -341,11 +341,11 @@ def main_worker(gpu, ngpus_per_node, argss):
         is_best = False
         is_best_cluster = False
         is_eval = False
-        if epoch_log > 70:
+        if epoch_log > 50:
             if args.evaluate and (epoch_log % args.eval_freq == 0):
                 is_eval = True
         else:
-            if args.evaluate and (epoch_log % 3 == 0):
+            if args.evaluate and (epoch_log % 2 == 0):
                 is_eval = True
 
         if is_eval:
