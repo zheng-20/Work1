@@ -426,7 +426,7 @@ def mean_shift_gpu(x, offset, bandwidth):
     # x: [N, f]
     N, c = x.shape
     # IDX = torch.zeros(N).to(x.device).long()
-    IDX = np.zeros(N, dtype=np.int)
+    IDX = np.zeros(N, dtype=int)
     ms = MeanShift_GPU(bandwidth = bandwidth, batch_size = 700, max_iter = 10, eps = 1e-5, check_converge = False)
     for i in range(len(offset)):
         if i == 0:
