@@ -39,6 +39,16 @@ def intersectionAndUnion(output, target, K, ignore_index=255):
 
 def intersectionAndUnionGPU(output, target, K, ignore_index=255):
     # 'K' classes, output and target sizes are N or N * L or N * H * W, each value in range 0 to K - 1.
+    output[output == 9] = 0
+    output[output == 6] = 0
+    output[output == 7] = 0
+    output[output == 8] = 2
+
+    target[target == 9] = 0
+    target[target == 6] = 0
+    target[target == 7] = 0
+    target[target == 8] = 2
+    K -= 4
     assert (output.dim() in [1, 2, 3])
     assert output.shape == target.shape
     output = output.view(-1)

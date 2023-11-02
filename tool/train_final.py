@@ -31,7 +31,7 @@ from util.common_util import AverageMeter, intersectionAndUnionGPU, find_free_po
 from util.data_util_prim import collate_fn, collate_fn_limit, collate_dse_fn, collate_dse_fn_region
 # from util import transform as t
 from util.logger import get_logger
-from util.loss_util import boundary_contrastive_loss, compute_boundary_loss, compute_embedding_loss, mean_shift_gpu, compute_iou, compute_iou_RG, compute_boundary_loss_for_type, block_mean_shift_gpu, MeanShift_kernel_GPU
+from util.loss_util import compute_type_miou_abc, compute_miou, compute_type_loss, compute_embedding_loss_boundary, boundary_contrast_loss, boundary_contrastive_loss, compute_boundary_loss, compute_embedding_loss, mean_shift_gpu, compute_iou, compute_iou_RG, compute_boundary_loss_for_type, block_mean_shift_gpu, MeanShift_kernel_GPU
 from functools import partial
 from util.lr import MultiStepWithWarmup, PolyLR
 
@@ -108,8 +108,8 @@ def main():
 
 
 def main_worker(gpu, ngpus_per_node, argss):
-    global args, best_iou
-    args, best_iou = argss, 0
+    global args, best_iou, best_iou_cluster
+    args, best_iou, best_iou_cluster = argss, 0, 0
     if args.distributed:
         if args.dist_url == "env://" and args.rank == -1:
             args.rank = int(os.environ["RANK"])
@@ -120,22 +120,8 @@ def main_worker(gpu, ngpus_per_node, argss):
     from model.pointtransformer.pointtransformer_seg import BoundaryNet as BoundaryModel
     if args.arch == 'pointtransformer_seg_repro':
         from model.pointtransformer.pointtransformer_seg import pointtransformer_seg_repro as Model
-    elif args.arch == 'pointtransformer_primitive_seg_repro':
-        from model.pointtransformer.pointtransformer_seg import PointTransformer_PrimSeg as Model
-    elif args.arch == 'boundarytransformer_primitive_seg_repro':
-        from model.pointtransformer.pointtransformer_seg import BoundaryTransformer_PrimSeg as Model
-    elif args.arch == 'pointtransformer_Unit_seg_repro':
-        from model.pointtransformer.pointtransformer_seg import pointtransformer_Unit_seg_repro as Model
-    elif args.arch == 'boundarypointtransformer_Unit_seg_repro':
-        from model.pointtransformer.pointtransformer_seg import boundarypointtransformer_Unit_seg_repro as Model
-    elif args.arch == 'boundaryaggregationtransformer_seg_repro':
-        from model.pointtransformer.pointtransformer_seg import boundaryaggregationtransformer_seg_repro as Model
-    elif args.arch == 'pt_next':
-        from model.pointtransformer.pointtransformer import pointtransformer_seg_repro as Model
-    elif args.arch == 'pt_next128':
-        from model.pointtransformer.pointtransformer import pointtransformer_seg_repro128 as Model
-    elif args.arch == 'pt_next_RG':
-        from model.pointtransformer.pointtransformer import pointtransformer_seg_repro_RG as Model
+    elif args.arch == 'Net_seg_repro':
+        from model.pointtransformer.pointtransformer import Net_seg_repro as Model
     else:
         raise Exception('architecture {} not supported yet'.format(args.arch))
     # model = Model(c=args.fea_dim, k=args.classes)
@@ -144,7 +130,7 @@ def main_worker(gpu, ngpus_per_node, argss):
 
     # if args.sync_bn:
     #    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label).cuda()
+    criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label, label_smoothing=0.2).cuda() # label_smoothing=0.2
     boundary_criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label).cuda()
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -170,7 +156,7 @@ def main_worker(gpu, ngpus_per_node, argss):
         #     },
         # ]
         # optimizer = torch.optim.AdamW(param_dicts, lr=args.base_lr, weight_decay=args.weight_decay)
-        optimizer = torch.optim.AdamW([{"params": model.parameters()}], lr=args.base_lr, weight_decay=args.weight_decay)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=args.base_lr, weight_decay=args.weight_decay)
 
 
     if main_process():
@@ -235,6 +221,7 @@ def main_worker(gpu, ngpus_per_node, argss):
             scheduler_state_dict = checkpoint['scheduler']
             #best_iou = 40.0
             best_iou = checkpoint['best_iou']
+            best_iou_cluster = checkpoint['best_iou_cluster']
             if main_process():
                 logger.info("=> loaded checkpoint '{}' (epoch {})".format(args.resume, checkpoint['epoch']))
         else:
@@ -325,7 +312,7 @@ def main_worker(gpu, ngpus_per_node, argss):
         scaler = None
 
     if args.test_only:
-        s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
+        s_miou_cluster, p_miou_cluster, s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
         # print("s_miou: {}, p_miou: {}".format(s_miou, p_miou))
         return 0
         
@@ -352,12 +339,17 @@ def main_worker(gpu, ngpus_per_node, argss):
             writer.add_scalar('allAcc_train', allAcc_train, epoch_log)
 
         is_best = False
-        if args.evaluate and (epoch_log % args.eval_freq == 0):
-            # if args.data_name == 'shapenet':
-            #     raise NotImplementedError()
-            # else:
-            #     loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion)
-            s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
+        is_best_cluster = False
+        is_eval = False
+        if epoch_log > 70:
+            if args.evaluate and (epoch_log % args.eval_freq == 0):
+                is_eval = True
+        else:
+            if args.evaluate and (epoch_log % 3 == 0):
+                is_eval = True
+
+        if is_eval:
+            s_miou_cluster, p_miou_cluster, s_miou, p_miou, loss_val, feat_loss_val, type_loss_val, boundary_loss_val, contrast_loss_val, mIoU_val, mAcc_val, allAcc_val = validate(val_loader, model, criterion, boundary_criterion)
 
             if main_process():
                 writer.add_scalar('feat_loss_val', feat_loss_val, epoch_log)
@@ -366,12 +358,16 @@ def main_worker(gpu, ngpus_per_node, argss):
                 writer.add_scalar('contrast_loss_val', contrast_loss_val, epoch_log)
                 writer.add_scalar('s_miou', s_miou, epoch_log)
                 writer.add_scalar('p_miou', p_miou, epoch_log)
+                writer.add_scalar('s_miou_cluster', s_miou_cluster, epoch_log)
+                writer.add_scalar('p_miou_cluster', p_miou_cluster, epoch_log)
                 writer.add_scalar('loss_val', loss_val, epoch_log)
                 writer.add_scalar('mIoU_val', mIoU_val, epoch_log)
                 writer.add_scalar('mAcc_val', mAcc_val, epoch_log)
                 writer.add_scalar('allAcc_val', allAcc_val, epoch_log)
                 is_best = s_miou > best_iou
+                is_best_cluster = s_miou_cluster > best_iou_cluster
                 best_iou = max(best_iou, s_miou)
+                best_iou_cluster = max(best_iou_cluster, s_miou_cluster)
 
         if (epoch_log % args.save_freq == 0) and main_process():
             if not os.path.exists(args.save_path + "/model/"):
@@ -379,10 +375,14 @@ def main_worker(gpu, ngpus_per_node, argss):
             filename = args.save_path + '/model/model_last.pth'
             logger.info('Saving checkpoint to: ' + filename)
             torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
-                        'scheduler': scheduler.state_dict(), 'best_iou': best_iou, 'is_best': is_best}, filename)
+                        'scheduler': scheduler.state_dict(), 'best_iou': best_iou, 'best_iou_cluster': best_iou_cluster}, filename)
             if is_best:
                 logger.info('Best validation mIoU updated to: {:.4f}'.format(best_iou))
                 shutil.copyfile(filename, args.save_path + '/model/model_best.pth')
+                shutil.copyfile(filename, args.save_path + '/model/model_{}.pth'.format(epoch_log))
+            if is_best_cluster:
+                logger.info('Best validation mIoU(cluster) updated to: {:.4f}'.format(best_iou_cluster))
+                shutil.copyfile(filename, args.save_path + '/model/model_best_cluster.pth')
                 shutil.copyfile(filename, args.save_path + '/model/model_{}.pth'.format(epoch_log))
 
     if main_process():
@@ -421,19 +421,21 @@ def train(train_loader, model, criterion, boundary_criterion, optimizer, epoch, 
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
-            type_per_point, boundary_pred = model([coord, normals, offset], edges, boundary.int())
+            primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges, boundary.int())
             assert type_per_point.shape[1] == args.classes
-            if semantic.shape[-1] == 1:
-                semantic = semantic[:, 0]  # for cls
-            feat_loss, contrast_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()  # for debug
-            # loss = criterion(output, target)
-            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
-            type_loss = criterion(type_per_point, semantic)
-            boundary_loss = boundary_criterion(boundary_pred, boundary)
-            # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
-            # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            # if semantic.shape[-1] == 1:
+            #     semantic = semantic[:, 0]  # for cls
+            # feat_loss, contrast_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()  # for debug
+            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            # feat_loss, pull_loss, push_loss = compute_embedding_loss_boundary(coord, boundary, primitive_embedding, label, offset)
+            # type_loss = criterion(type_per_point, semantic)
+            type_loss = compute_type_loss(type_per_point, semantic, criterion)
+            # boundary_loss = boundary_criterion(boundary_pred, boundary)
+            boundary_loss = compute_boundary_loss(boundary_pred, boundary)
+            contrast_loss = boundary_contrast_loss(coord, boundary, primitive_embedding, label, offset)
+            # contrast_loss = torch.tensor(0).cuda()
             # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
-            loss = type_loss + boundary_loss
+            loss = feat_loss + type_loss + boundary_loss + args.contrast_loss_weight * contrast_loss
             
         optimizer.zero_grad()
         # loss.backward()
@@ -553,6 +555,8 @@ def validate(val_loader, model, criterion, boundary_criterion):
     contrast_loss_meter = AverageMeter()
     s_iou_meter = AverageMeter()
     type_iou_meter = AverageMeter()
+    s_iou_cluster_meter = AverageMeter()
+    type_iou_cluster_meter = AverageMeter()
     use_embed_counter = 0
 
     # torch.cuda.empty_cache()
@@ -578,16 +582,17 @@ def validate(val_loader, model, criterion, boundary_criterion):
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
 
-            type_per_point, boundary_pred = model([coord, normals, offset], edges, boundary.int(), is_train=True)
-            contrast_loss, feat_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()
+            primitive_embedding, type_per_point, boundary_pred = model([coord, normals, offset], edges, boundary.int(), is_train=False)
+            # contrast_loss, feat_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()
             # loss = criterion(output, target)
-            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
-            type_loss = criterion(type_per_point, semantic)
-            boundary_loss = boundary_criterion(boundary_pred, boundary)
-            # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
-            # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
+            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            # type_loss = criterion(type_per_point, semantic)
+            type_loss = compute_type_loss(type_per_point, semantic, criterion)
+            # boundary_loss = boundary_criterion(boundary_pred, boundary)
+            boundary_loss = compute_boundary_loss(boundary_pred, boundary)
+            contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
             # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
-            loss = type_loss + boundary_loss
+            loss = feat_loss + type_loss + boundary_loss + args.contrast_loss_weight * contrast_loss
 
         # output = output.max(1)[1]
         n = coord.size(0)
@@ -611,6 +616,8 @@ def validate(val_loader, model, criterion, boundary_criterion):
         boundary_pred_score = softmax(boundary_pred)
         test_siou = []
         test_piou = []
+        test_siou_cluster = []
+        test_piou_cluster = []
         for j in range(len(offset)):
             if j == 0:
                 F = face[0:F_offset[j]]
@@ -618,22 +625,22 @@ def validate(val_loader, model, criterion, boundary_criterion):
                 b_gt = boundary[0:offset[j]]
                 prediction = boundary_pred_score[0:offset[j]]
                 type_pred = type_per_point[0:offset[j]]
-                # embedding = primitive_embedding[0:offset[j]]
+                embedding = primitive_embedding[0:offset[j]]
             else:
                 F = face[F_offset[j-1]:F_offset[j]]
                 V = coord[offset[j-1]:offset[j]]
                 b_gt = boundary[offset[j-1]:offset[j]]
                 prediction = boundary_pred_score[offset[j-1]:offset[j]]
                 type_pred = type_per_point[offset[j-1]:offset[j]]
-                # embedding = primitive_embedding[offset[j-1]:offset[j]]
+                embedding = primitive_embedding[offset[j-1]:offset[j]]
             F = F.numpy().astype('int32')
             face_labels = np.zeros((F.shape[0]), dtype='int32')
-            # face_labels_with_embed = np.zeros((F.shape[0]), dtype='int32')
+            face_labels_with_embed = np.zeros((F.shape[0]), dtype='int32')
             masks = np.zeros((V.shape[0]), dtype='int32')
             gt_face_labels = np.zeros((F.shape[0]), dtype='int32')
             gt_masks = np.zeros((V.shape[0]), dtype='int32')
             output_label = np.zeros((V.shape[0]), dtype='int32')
-            # output_label_with_embed = np.zeros((V.shape[0]), dtype='int32')
+            output_label_with_embed = np.zeros((V.shape[0]), dtype='int32')
             gt_output_label = np.zeros((V.shape[0]), dtype='int32')
             b_gt = b_gt.data.cpu().numpy().astype('int32')
             b = (prediction[:,1]>prediction[:,0]).data.cpu().numpy().astype('int32')
@@ -647,6 +654,9 @@ def validate(val_loader, model, criterion, boundary_criterion):
             # ms = MeanShift_kernel_GPU(bandwidth=args.bandwidth, batch_size=700)
             # point_embedding = ms.fit(embedding) # (n, 128)
             # point_embedding = point_embedding.data.cpu().numpy().astype('float32')
+            # spec_cluster_pred：聚类结果；  point_embedding：核函数计算后的特征
+            spec_cluster_pred, point_embedding = mean_shift_gpu(embedding, offset, bandwidth=args.bandwidth)
+            point_embedding = point_embedding.data.cpu().numpy().astype('float32')
             
             Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
             V.shape[0], F.shape[0], c_void_p(gt_face_labels.ctypes.data), c_void_p(gt_masks.ctypes.data),
@@ -658,13 +668,13 @@ def validate(val_loader, model, criterion, boundary_criterion):
                     pb[edg[:,0]==k] = 1
                     pb[edg[:,1]==k] = 1
 
-            # # 特征+边界聚类
-            # Regiongrow.RegionGrowing_with_embed(c_void_p(point_embedding.ctypes.data), point_embedding.shape[1], c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
-            # V.shape[0], F.shape[0], c_void_p(face_labels_with_embed.ctypes.data), c_void_p(masks.ctypes.data),
-            # c_float(0.99), c_void_p(output_label_with_embed.ctypes.data))
-            Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
-            V.shape[0], F.shape[0], c_void_p(face_labels.ctypes.data), c_void_p(masks.ctypes.data),
-            c_float(0.99), c_void_p(output_label.ctypes.data))
+            # 特征+边界聚类
+            Regiongrow.RegionGrowing_with_embed(c_void_p(point_embedding.ctypes.data), point_embedding.shape[1], c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
+            V.shape[0], F.shape[0], c_void_p(face_labels_with_embed.ctypes.data), c_void_p(masks.ctypes.data),
+            c_float(0.99), c_void_p(output_label_with_embed.ctypes.data))
+            # Regiongrow.RegionGrowing(c_void_p(pb.ctypes.data), c_void_p(F.ctypes.data),
+            # V.shape[0], F.shape[0], c_void_p(face_labels.ctypes.data), c_void_p(masks.ctypes.data),
+            # c_float(0.99), c_void_p(output_label.ctypes.data))
 
             pp = np.argmax(type_pred.data.cpu().numpy(), axis=1)
 
@@ -713,20 +723,30 @@ def validate(val_loader, model, criterion, boundary_criterion):
             semantic_faces_gt = semantic.data.cpu().numpy()[F[:,0]]
             # semantic_faces = semantic_faces_gt
 
-            s_iou_, p_iou_ = compute_iou_RG(gt_face_labels, face_labels, semantic_faces, semantic_faces_gt)
-            # s_iou_with_embed, p_iou_with_embed = compute_iou_RG(gt_face_labels, face_labels_with_embed, semantic_faces, semantic_faces_gt)
+            # s_iou_, p_iou_ = compute_iou_RG(gt_face_labels, face_labels, semantic_faces, semantic_faces_gt)
+            s_iou_with_embed, p_iou_with_embed = compute_iou_RG(gt_face_labels, face_labels_with_embed, semantic_faces, semantic_faces_gt)
+            # s_iou_cluster, p_iou_cluster = compute_iou(label, spec_cluster_pred, type_pred, semantic, offset)
+            spec_cluster_pred = torch.from_numpy(spec_cluster_pred).unsqueeze(0).cuda()
+            s_iou_cluster = compute_miou(spec_cluster_pred, label.unsqueeze(0)).item()
+            p_iou_cluster = compute_type_miou_abc(type_pred.unsqueeze(0), semantic.unsqueeze(0), spec_cluster_pred, label.unsqueeze(0)).item()
             # if s_iou_with_embed > s_iou_:
             #     print('use embed:{}, improve:{:.4f}'.format(use_embed_counter, s_iou_with_embed - s_iou_))
             #     s_iou_ = s_iou_with_embed
             #     p_iou_ = p_iou_with_embed
             #     use_embed_counter += 1
-            test_siou.append(s_iou_)
-            test_piou.append(p_iou_)
+            test_siou.append(s_iou_with_embed)
+            test_piou.append(p_iou_with_embed)
+            test_siou_cluster.append(s_iou_cluster)
+            test_piou_cluster.append(p_iou_cluster)
         
         s_iou = np.mean(test_siou)
         p_iou = np.mean(test_piou)
+        s_iou_cluster = np.mean(test_siou_cluster)
+        p_iou_cluster = np.mean(test_piou_cluster)
         s_iou = torch.tensor(s_iou).cuda()
         p_iou = torch.tensor(p_iou).cuda()
+        s_iou_cluster = torch.tensor(s_iou_cluster).cuda()
+        p_iou_cluster = torch.tensor(p_iou_cluster).cuda()
 
         # spec_cluster_pred = block_mean_shift_gpu(coord, primitive_embedding, offset, bandwidth=args.bandwidth)
         # # spec_cluster_pred = mean_shift_gpu(primitive_embedding, offset, bandwidth=args.bandwidth)
@@ -739,6 +759,8 @@ def validate(val_loader, model, criterion, boundary_criterion):
             dist.all_reduce(contrast_loss.div_(torch.cuda.device_count()))
             dist.all_reduce(s_iou.div_(torch.cuda.device_count()))  # 多卡通信求平均值
             dist.all_reduce(p_iou.div_(torch.cuda.device_count()))
+            dist.all_reduce(s_iou_cluster.div_(torch.cuda.device_count()))  # 多卡通信求平均值
+            dist.all_reduce(p_iou_cluster.div_(torch.cuda.device_count()))
         feat_loss_, type_loss_, boundary_loss_, contrast_loss_ = feat_loss.data.cpu().numpy(), type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy(), contrast_loss.data.cpu().numpy()
         # feat_loss_, type_loss_, boundary_loss_ = feat_loss.data.cpu().numpy(), type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
         # type_loss_, boundary_loss_ = type_loss.data.cpu().numpy(), boundary_loss.data.cpu().numpy()
@@ -748,6 +770,8 @@ def validate(val_loader, model, criterion, boundary_criterion):
         contrast_loss_meter.update(contrast_loss_.item())
         s_iou_meter.update(s_iou)
         type_iou_meter.update(p_iou)
+        s_iou_cluster_meter.update(s_iou_cluster)
+        type_iou_cluster_meter.update(p_iou_cluster)
         batch_time.update(time.time() - end)
         end = time.time()
         if (i + 1) % args.print_freq == 0 and main_process():
@@ -761,7 +785,9 @@ def validate(val_loader, model, criterion, boundary_criterion):
                         'Contrast_Loss {contrast_loss_meter.val:.4f} ({contrast_loss_meter.avg:.4f}) '
                         'Acc {accuracy:.4f} '
                         'Seg_IoU {s_iou_meter.val:.4f} ({s_iou_meter.avg:.4f}) '
-                        'Type_IoU {type_iou_meter.val:.4f} ({type_iou_meter.avg:.4f}).'.format(i + 1, len(val_loader),
+                        'Type_IoU {type_iou_meter.val:.4f} ({type_iou_meter.avg:.4f}) '
+                        'Seg_IoU_cluster {s_iou_cluster_meter.val:.4f} ({s_iou_cluster_meter.avg:.4f}) '
+                        'Type_IoU_cluster {type_iou_cluster_meter.val:.4f} ({type_iou_cluster_meter.avg:.4f}).'.format(i + 1, len(val_loader),
                                                           data_time=data_time,
                                                           batch_time=batch_time,
                                                           loss_meter=loss_meter,
@@ -771,7 +797,9 @@ def validate(val_loader, model, criterion, boundary_criterion):
                                                           contrast_loss_meter=contrast_loss_meter,
                                                           accuracy=accuracy,
                                                           s_iou_meter=s_iou_meter,
-                                                          type_iou_meter=type_iou_meter))
+                                                          type_iou_meter=type_iou_meter,
+                                                          s_iou_cluster_meter=s_iou_cluster_meter,
+                                                          type_iou_cluster_meter=type_iou_cluster_meter))
 
     iou_class = intersection_meter.sum / (union_meter.sum + 1e-10)
     accuracy_class = intersection_meter.sum / (target_meter.sum + 1e-10)
@@ -781,13 +809,14 @@ def validate(val_loader, model, criterion, boundary_criterion):
 
     if main_process():
         logger.info('Val result: mIoU/mAcc/allAcc {:.4f}/{:.4f}/{:.4f}.'.format(mIoU, mAcc, allAcc))
-        for i in range(args.classes):
+        for i in range(args.classes - 4):
             logger.info('Class_{} Result: iou/accuracy {:.4f}/{:.4f}.'.format(i, iou_class[i], accuracy_class[i]))
         logger.info('Val result: Seg_mIoU/Type_mIoU {:.4f}/{:.4f}.'.format(s_iou_meter.avg, type_iou_meter.avg))
+        logger.info('Val result(cluster): Seg_mIoU/Type_mIoU {:.4f}/{:.4f}.'.format(s_iou_cluster_meter.avg, type_iou_cluster_meter.avg))
         logger.info('<<<<<<<<<<<<<<<<< End Evaluation <<<<<<<<<<<<<<<<<')
 
     # return loss_meter.avg, mIoU, mAcc, allAcc
-    return s_iou_meter.avg, type_iou_meter.avg, loss_meter.avg, feat_loss_meter.avg, type_loss_meter.avg, boundary_loss_meter.avg, contrast_loss_meter.avg, mIoU, mAcc, allAcc
+    return s_iou_cluster_meter.avg, type_iou_cluster_meter.avg, s_iou_meter.avg, type_iou_meter.avg, loss_meter.avg, feat_loss_meter.avg, type_loss_meter.avg, boundary_loss_meter.avg, contrast_loss_meter.avg, mIoU, mAcc, allAcc
 
 
 if __name__ == '__main__':

@@ -11,7 +11,7 @@ DATA:
 
 TRAIN:
   #arch
-  arch: pt_next_RG
+  arch: Net_seg_repro
   # stem_transformer: True
   # use_xyz: True
   sync_bn: True  # adopt sync_bn or not
@@ -41,37 +41,37 @@ TRAIN:
   # transformer_lr_scale: 0.1
   # jitter_sigma: 0.005
   # jitter_clip: 0.02
-  scheduler_update: epoch 
+  scheduler_update: epoch  # step or epoch 
   scheduler: Cosine 
   # warmup: linear
   # warmup_iters: 1500
   # warmup_ratio: 0.000001
-  use_amp: False
+  use_amp: True
   optimizer: AdamW 
   ignore_label: -100
-  train_gpu: [7]
+  train_gpu: [3]
   workers: 4  # data loader workers
-  batch_size: 24  # batch size for training
+  batch_size: 32  # batch size for training
   batch_size_val: 1  # batch size for validation during training, memory and speed tradeoff
-  base_lr: 0.001
+  base_lr: 0.01
   epochs: 200
   start_epoch: 0
   # step_epoch: 30
   # multiplier: 0.1
   momentum: 0.9
-  weight_decay: 0.01
+  weight_decay: 0.001
   # drop_rate: 0.5
   manual_seed: 123
   print_freq: 1
   save_freq: 1
   save_path: runs/abc
   weight:  # path to initial weight (default: none)
-  resume:  # path to latest checkpoint (default: none)
+  resume: exp/abc_final/full/model/model_last.pth # path to latest checkpoint (default: none)
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
   test_only: False  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
   feat_loss_weight: 1.0
-  contrast_loss_weight: 1.0
+  contrast_loss_weight: 0.2
 Distributed:
   dist_url: tcp://127.0.0.1:6789
   dist_backend: 'nccl'
