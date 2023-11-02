@@ -9,6 +9,7 @@ from lapsolver import solve_dense
 from sklearn.cluster import MeanShift
 from lib.pointops.functions import pointops
 from sklearn.metrics.pairwise import euclidean_distances
+from scipy import stats
 
 def binarys(points, dep):
     coord_min, coord_max = torch.amin(points, axis=0)[:3], torch.amax(points, axis=0)[:3]
@@ -579,10 +580,12 @@ def mean_IOU_primitive_segment(matching, predicted_labels, labels, pred_prim, gt
 						np.sum(np.logical_or(pred_indices, gt_indices)) + 1e-8)
 			iou_b.append(iou)
 
-			# evaluation of primitive type prediction performance
+			# evaluation of primitive type prediction performancegt
 			gt_prim_type_k = gt_prim[b][gt_indices][0]
-			if gt_prim[b][gt_indices][0] != np.argmax(np.bincount(gt_prim[b][gt_indices])):     # 有些点云segment的primitive type不唯一，取众数
-				gt_prim_type_k = np.argmax(np.bincount(gt_prim[b][gt_indices]))
+			if gt_prim[b][gt_indices][0] != stats.mode(gt_prim[b][gt_indices]).mode[0]:     # 当存在背景点时
+				gt_prim_type_k = stats.mode(gt_prim[b][gt_indices]).mode[0]
+			# if gt_prim[b][gt_indices][0] != np.argmax(np.bincount(gt_prim[b][gt_indices])):     # 有些点云segment的primitive type不唯一，取众数
+				# gt_prim_type_k = np.argmax(np.bincount(gt_prim[b][gt_indices]))
 			try:
 				predicted_prim_type_k = pred_prim[b][r]
 			except:

@@ -822,7 +822,7 @@ def validate(val_loader, model, criterion, boundary_criterion):
 if __name__ == '__main__':
     import gc
     gc.collect()
-    main()
+    # main()
     try:
         main()
     except Exception as e:
