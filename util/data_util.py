@@ -119,19 +119,19 @@ def data_prepare_dse_abc(coord, normals, boundary, label, semantic, param, F, ed
 
     coord_min = np.min(coord, 0)
     coord -= coord_min
-    label -= 1  # 将label从1开始变为0开始
-    # set small number primitive as background
-    counter = Counter(label)
-    mapper = np.ones([label.max() + 1]) * -1
-    keys = [k for k, v in counter.items() if v > 100]
-    if len(keys):
-        mapper[keys] = np.arange(len(keys))
-    label = mapper[label]
-    clean_primitives = np.ones_like(semantic) * -1
-    valid_mask = label != -1
-    clean_primitives[valid_mask] = semantic[valid_mask]
-    semantic = clean_primitives.astype(int)
-    label = label.astype(int)
+    # label -= 1  # 将label从1开始变为0开始
+    # # set small number primitive as background
+    # counter = Counter(label)
+    # mapper = np.ones([label.max() + 1]) * -1
+    # keys = [k for k, v in counter.items() if v > 100]
+    # if len(keys):
+    #     mapper[keys] = np.arange(len(keys))
+    # label = mapper[label]
+    # clean_primitives = np.ones_like(semantic) * -1
+    # valid_mask = label != -1
+    # clean_primitives[valid_mask] = semantic[valid_mask]
+    # semantic = clean_primitives.astype(int)
+    # label = label.astype(int)
     coord = torch.FloatTensor(coord)
     normals = torch.FloatTensor(normals)
     boundary = torch.LongTensor(boundary)

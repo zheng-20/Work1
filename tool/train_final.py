@@ -725,10 +725,10 @@ def validate(val_loader, model, criterion, boundary_criterion):
 
             # s_iou_, p_iou_ = compute_iou_RG(gt_face_labels, face_labels, semantic_faces, semantic_faces_gt)
             s_iou_with_embed, p_iou_with_embed = compute_iou_RG(gt_face_labels, face_labels_with_embed, semantic_faces, semantic_faces_gt)
-            # s_iou_cluster, p_iou_cluster = compute_iou(label, spec_cluster_pred, type_pred, semantic, offset)
-            spec_cluster_pred = torch.from_numpy(spec_cluster_pred).unsqueeze(0).cuda()
-            s_iou_cluster = compute_miou(spec_cluster_pred, label.unsqueeze(0)).item()
-            p_iou_cluster = compute_type_miou_abc(type_pred.unsqueeze(0), semantic.unsqueeze(0), spec_cluster_pred, label.unsqueeze(0)).item()
+            s_iou_cluster, p_iou_cluster = compute_iou(label, spec_cluster_pred, type_pred, semantic, offset)
+            # spec_cluster_pred = torch.from_numpy(spec_cluster_pred).unsqueeze(0).cuda()
+            # s_iou_cluster = compute_miou(spec_cluster_pred, label.unsqueeze(0)).item()
+            # p_iou_cluster = compute_type_miou_abc(type_pred.unsqueeze(0), semantic.unsqueeze(0), spec_cluster_pred, label.unsqueeze(0)).item()
             # if s_iou_with_embed > s_iou_:
             #     print('use embed:{}, improve:{:.4f}'.format(use_embed_counter, s_iou_with_embed - s_iou_))
             #     s_iou_ = s_iou_with_embed
