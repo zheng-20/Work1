@@ -160,7 +160,7 @@ def compute_embedding_loss_boundary(point, boundary, pred_feat, gt_label, offset
         
     # for i in range(batch_size):
         # gt = gt - 1
-        num_class = gt.max()
+        num_class = gt.max() + 2
 
         embeddings = []
         b_embeddings = []
@@ -173,7 +173,7 @@ def compute_embedding_loss_boundary(point, boundary, pred_feat, gt_label, offset
         b_mask = (neighbor_b > 0)
 
         for j in range(num_class):
-            mask = (gt == j + 1)
+            mask = (gt == j - 1)
             feature = pred[mask]
             if len(feature) == 0:
                 continue
@@ -200,7 +200,7 @@ def compute_embedding_loss_boundary(point, boundary, pred_feat, gt_label, offset
             dis = F.relu(dis) * 0.2
             pull_loss_tp += torch.mean(dis)
 
-        pull_loss = pull_loss + pull_loss_tp / (len(embeddings) + len(b_embeddings))
+        pull_loss = pull_loss + pull_loss_tp / len(embeddings)
 
         # inter-embedding loss
         try:

@@ -119,6 +119,34 @@ def data_prepare_dse_abc(coord, normals, boundary, label, semantic, param, F, ed
 
     coord_min = np.min(coord, 0)
     coord -= coord_min
+    label -= 1  # 将label从1开始变为0开始
+    # set small number primitive as background
+    counter = Counter(label)
+    mapper = np.ones([label.max() + 1]) * -1
+    keys = [k for k, v in counter.items() if v > 100]
+    if len(keys):
+        mapper[keys] = np.arange(len(keys))
+    label = mapper[label]
+    clean_primitives = np.ones_like(semantic) * -1
+    valid_mask = label != -1
+    clean_primitives[valid_mask] = semantic[valid_mask]
+    semantic = clean_primitives.astype(int)
+    label = label.astype(int)
+    coord = torch.FloatTensor(coord)
+    normals = torch.FloatTensor(normals)
+    boundary = torch.LongTensor(boundary)
+    semantic = torch.LongTensor(semantic)
+    param = torch.FloatTensor(param)
+    label = torch.LongTensor(label)
+    F = torch.LongTensor(F)
+    edges = torch.IntTensor(edges)
+    dse_edges = torch.IntTensor(dse_edges)
+    return coord, normals, boundary, label, semantic, param, F, edges, dse_edges
+
+def data_prepare_dse_abc_val(coord, normals, boundary, label, semantic, param, F, edges, dse_edges, split='train', voxel_size=0.04, voxel_max=None, transform=None, shuffle_index=False):
+
+    coord_min = np.min(coord, 0)
+    coord -= coord_min
     # label -= 1  # 将label从1开始变为0开始
     # # set small number primitive as background
     # counter = Counter(label)
