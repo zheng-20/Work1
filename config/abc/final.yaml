@@ -34,7 +34,7 @@ TRAIN:
   # max_num_neighbors: 34 # For KPConv
   # ratio: 0.25
   k: 16
-  bandwidth: 0.7
+  bandwidth: 1.31
 
   # training
   # aug: True
@@ -51,7 +51,7 @@ TRAIN:
   ignore_label: -100
   train_gpu: [0,1,2]
   workers: 16  # data loader workers
-  batch_size: 72  # batch size for training
+  batch_size: 39  # batch size for training
   batch_size_val: 3  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.001
   epochs: 200
@@ -65,7 +65,7 @@ TRAIN:
   print_freq: 1
   save_freq: 1
   save_path: runs/abc
-  weight:  # path to initial weight (default: none)
+  weight: /home/bingxing2/home/scx6d2l/fz20/project/Work1/exp/pretrained_model/model_best.pth # path to initial weight (default: none)
   resume:  # path to latest checkpoint (default: none)
   boundaryweight: /home/bingxing2/home/scx6d2l/fz20/project/Work1/exp/pretrained_model/model_best.pth
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
