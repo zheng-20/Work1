@@ -157,8 +157,8 @@ def compute_embedding_loss_boundary(point, boundary, pred_feat, gt_label, offset
             b = boundary[offset[i-1]:offset[i]]
             p = point[offset[i-1]:offset[i]]
             offset_i = offset[i] - offset[i-1]
-        
-    # for i in range(batch_size):
+
+        # for i in range(batch_size):
         # gt = gt - 1
         num_class = gt.max()
 
@@ -426,7 +426,7 @@ def mean_shift_gpu(x, offset, bandwidth):
     # x: [N, f]
     N, c = x.shape
     # IDX = torch.zeros(N).to(x.device).long()
-    IDX = np.zeros(N, dtype=np.int)
+    IDX = np.zeros(N, dtype=int)
     ms = MeanShift_GPU(bandwidth = bandwidth, batch_size = 700, max_iter = 10, eps = 1e-5, check_converge = False)
     for i in range(len(offset)):
         if i == 0:
@@ -582,10 +582,10 @@ def mean_IOU_primitive_segment(matching, predicted_labels, labels, pred_prim, gt
 
 			# evaluation of primitive type prediction performancegt
 			gt_prim_type_k = gt_prim[b][gt_indices][0]
-			if gt_prim[b][gt_indices][0] != stats.mode(gt_prim[b][gt_indices]).mode[0]:     # 当存在背景点时
-				gt_prim_type_k = stats.mode(gt_prim[b][gt_indices]).mode[0]
-			# if gt_prim[b][gt_indices][0] != np.argmax(np.bincount(gt_prim[b][gt_indices])):     # 有些点云segment的primitive type不唯一，取众数
-				# gt_prim_type_k = np.argmax(np.bincount(gt_prim[b][gt_indices]))
+			# if gt_prim[b][gt_indices][0] != stats.mode(gt_prim[b][gt_indices]).mode[0]:     # 当存在背景点时
+			# 	gt_prim_type_k = stats.mode(gt_prim[b][gt_indices]).mode[0]
+			if gt_prim[b][gt_indices][0] != np.argmax(np.bincount(gt_prim[b][gt_indices])):     # 有些点云segment的primitive type不唯一，取众数
+				gt_prim_type_k = np.argmax(np.bincount(gt_prim[b][gt_indices]))
 			try:
 				predicted_prim_type_k = pred_prim[b][r]
 			except:

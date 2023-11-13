@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import Dataset
 
 from util.voxelize import voxelize
-from util.data_util import sa_create, collate_fn, dataAugment, data_prepare_abc, data_prepare_dse_abc
+from util.data_util import sa_create, collate_fn, dataAugment, data_prepare_abc, data_prepare_dse_abc, data_prepare_dse_abc_val
 # from util.data_util import data_prepare_v101 as data_prepare
 # import open3d as o3d
 from lib.boundaryops.functions import boundaryops
@@ -93,7 +93,10 @@ class ABC_dse_Dataset(Dataset):
         data = np.load(data_path)
 
         coord, normals, boundary, label, semantic, param, F, edges, dse_edges = data['V'],data['N'],data['B'],data['L'],data['S'],data['T_param'],data['F'],data['edges'],data['dse_edges']
-        coord, normals, boundary, label, semantic, param, F, edges, dse_edges = data_prepare_dse_abc(coord, normals, boundary, label, semantic, param, F, edges, dse_edges, voxel_size=self.voxel_size)
+        if self.split == 'train':
+            coord, normals, boundary, label, semantic, param, F, edges, dse_edges = data_prepare_dse_abc(coord, normals, boundary, label, semantic, param, F, edges, dse_edges, voxel_size=self.voxel_size)
+        else:
+            coord, normals, boundary, label, semantic, param, F, edges, dse_edges = data_prepare_dse_abc_val(coord, normals, boundary, label, semantic, param, F, edges, dse_edges, voxel_size=self.voxel_size)
         # coord, normals = dataAugment(coord, normals, False, True, True)
         # coord, feat, label = data[:, 0:3], data[:, 3:6], data[:, 6]
         # coord, feat, label = data_prepare(coord, feat, label, self.split, self.voxel_size, self.voxel_max, self.transform, self.shuffle_index)

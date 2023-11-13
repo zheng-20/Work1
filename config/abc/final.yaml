@@ -7,11 +7,11 @@ DATA:
   voxel_size: 0.005
   voxel_max: 80000
   train_loop: 4
-  val_loop: 0.005
+  val_loop: 0.02
 
 TRAIN:
   #arch
-  arch: Net_seg_repro
+  arch: segnet
   # stem_transformer: True
   # use_xyz: True
   sync_bn: True  # adopt sync_bn or not
@@ -41,7 +41,7 @@ TRAIN:
   # transformer_lr_scale: 0.1
   # jitter_sigma: 0.005
   # jitter_clip: 0.02
-  scheduler_update: epoch 
+  scheduler_update: epoch  # step or epoch 
   scheduler: Cosine 
   # warmup: linear
   # warmup_iters: 1500
@@ -49,10 +49,10 @@ TRAIN:
   use_amp: True
   optimizer: AdamW 
   ignore_label: -100
-  train_gpu: [0]
-  workers: 1  # data loader workers
-  batch_size: 2  # batch size for training
-  batch_size_val: 1  # batch size for validation during training, memory and speed tradeoff
+  train_gpu: [0,1,2]
+  workers: 16  # data loader workers
+  batch_size: 39  # batch size for training
+  batch_size_val: 3  # batch size for validation during training, memory and speed tradeoff
   base_lr: 0.001
   epochs: 200
   start_epoch: 0
@@ -65,13 +65,14 @@ TRAIN:
   print_freq: 1
   save_freq: 1
   save_path: runs/abc
-  weight:  # path to initial weight (default: none)
-  resume: /home/bingxing2/home/scx6d2l/fz20/project/Work1/exp/abc_final/full1/model/model_best_cluster.pth # path to latest checkpoint (default: none)
+  weight: /home/bingxing2/home/scx6d2l/fz20/project/Work1/exp/pretrained_model/model_best.pth # path to initial weight (default: none)
+  resume:  # path to latest checkpoint (default: none)
+  boundaryweight: /home/bingxing2/home/scx6d2l/fz20/project/Work1/exp/pretrained_model/model_best.pth
   evaluate: True  # evaluate on validation set, extra gpu memory needed and small batch_size_val is recommend
-  test_only: True  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
+  test_only: False  # evaluate on test set, extra gpu memory needed and small batch_size_val is recommend
   eval_freq: 1
-  feat_loss_weight: 0.1
-  contrast_loss_weight: 0.1
+  feat_loss_weight: 1.0
+  contrast_loss_weight: 0.2
 Distributed:
   dist_url: tcp://127.0.0.1:6789
   dist_backend: 'nccl'
@@ -88,5 +89,5 @@ TEST:
   batch_size_test: 6
   model_path:  # Fill the path of the trained .pth file model
   save_folder: exp/abc/test # Fill the path to store the .npy files for each scene
-  names_path: data/s3dis/s3dis_names.txt
+  # names_path: data/s3dis/s3dis_names.txt
   visual: True
