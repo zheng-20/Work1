@@ -40,7 +40,7 @@ def collate_fn(batch):
     return torch.cat(coord), torch.cat(normals), torch.cat(boundary), torch.cat(label), torch.cat(semantic), torch.cat(param), torch.IntTensor(offset), torch.cat(edges)
 
 def collate_dse_fn(batch):
-    coord, normals, boundary, label, semantic, param, F, edges, dse_edges = list(zip(*batch))
+    fn, coord, normals, boundary, label, semantic, param, F, edges, dse_edges = list(zip(*batch))
     offset, count = [], 0
     # print("coord:", len(coord))
     for item in coord:
@@ -53,10 +53,10 @@ def collate_dse_fn(batch):
     #     # print("item shape:",item.shape)
     #     count += item.shape[0]
     #     F_offset.append(count)
-    return torch.cat(coord), torch.cat(normals), torch.cat(boundary), torch.cat(label), torch.cat(semantic), torch.cat(param), torch.IntTensor(offset), torch.cat(edges), torch.cat(dse_edges)
+    return fn, torch.cat(coord), torch.cat(normals), torch.cat(boundary), torch.cat(label), torch.cat(semantic), torch.cat(param), torch.IntTensor(offset), torch.cat(edges), torch.cat(dse_edges)
 
 def collate_dse_fn_region(batch):
-    coord, normals, boundary, label, semantic, param, F, edges, dse_edges = list(zip(*batch))
+    fn, coord, normals, boundary, label, semantic, param, F, edges, dse_edges = list(zip(*batch))
     offset, count = [], 0
     # print("coord:", len(coord))
     for item in coord:
@@ -69,7 +69,7 @@ def collate_dse_fn_region(batch):
         # print("item shape:",item.shape)
         count += item.shape[0]
         F_offset.append(count)
-    return torch.cat(coord), torch.cat(normals), torch.cat(boundary), torch.cat(label), torch.cat(semantic), torch.cat(param), torch.IntTensor(offset), torch.cat(edges), torch.cat(dse_edges), torch.cat(F), torch.IntTensor(F_offset)
+    return fn, torch.cat(coord), torch.cat(normals), torch.cat(boundary), torch.cat(label), torch.cat(semantic), torch.cat(param), torch.IntTensor(offset), torch.cat(edges), torch.cat(dse_edges), torch.cat(F), torch.IntTensor(F_offset)
 
 
 def collate_fn_limit(batch, max_batch_points, logger):

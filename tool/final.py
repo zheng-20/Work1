@@ -424,7 +424,7 @@ def train(train_loader, model, boundarymodel, criterion, boundary_criterion, opt
     model.train()
     end = time.time()
     max_iter = args.epochs * len(train_loader)
-    for i, (coord, normals, boundary, label, semantic, param, offset, edges, dse_edges) in enumerate(train_loader):  # (n, 3), (n, c), (n), (b)
+    for i, (fn, coord, normals, boundary, label, semantic, param, offset, edges, dse_edges) in enumerate(train_loader):  # (n, 3), (n, c), (n), (b)
         data_time.update(time.time() - end)
         # coord, feat, target, offset = coord.cuda(non_blocking=True), feat.cuda(non_blocking=True), target.cuda(non_blocking=True), offset.cuda(non_blocking=True)
         coord, normals, boundary, label, semantic, param, offset, edges, dse_edges = coord.cuda(non_blocking=True), normals.cuda(non_blocking=True), boundary.cuda(non_blocking=True), \
@@ -435,7 +435,16 @@ def train(train_loader, model, boundarymodel, criterion, boundary_criterion, opt
 
         use_amp = args.use_amp
         with torch.cuda.amp.autocast(enabled=use_amp):
-            boundary_pred = boundarymodel([coord, normals, offset])
+            fn = "visual/boundary_fea_cache/train/Us_{}.pt".format(fn[:8])
+            if os.path.exists(fn):
+                # print("{} Us find cache".format(fn))
+                boundary_pred = torch.load(fn).cuda()  # [N, 2]
+                # ent = torch.load(fn_ent)
+                # print(v.shape, ent.shape)
+            else:
+                boundary_pred = boundarymodel([coord, normals, offset])
+                torch.save(boundary_pred, fn)
+            # boundary_pred = boundarymodel([coord, normals, offset])
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
@@ -583,7 +592,7 @@ def validate(val_loader, model, boundarymodel, criterion, boundary_criterion):
     boundarymodel.eval()
     model.eval()
     end = time.time()
-    for i, (coord, normals, boundary, label, semantic, param, offset, edges, dse_edges, face, F_offset) in enumerate(val_loader):
+    for i, (fn, coord, normals, boundary, label, semantic, param, offset, edges, dse_edges, face, F_offset) in enumerate(val_loader):
         data_time.update(time.time() - end)
         # coord, feat, target, offset = coord.cuda(non_blocking=True), feat.cuda(non_blocking=True), target.cuda(non_blocking=True), offset.cuda(non_blocking=True)
         coord, normals, boundary, label, semantic, param, offset, edges, dse_edges = coord.cuda(non_blocking=True), normals.cuda(non_blocking=True), boundary.cuda(non_blocking=True), \
@@ -596,6 +605,15 @@ def validate(val_loader, model, boundarymodel, criterion, boundary_criterion):
         #     feat = torch.cat([normals, coord], 1)
         
         with torch.no_grad():
+            fn = "visual/boundary_fea_cache/val/Us_{}.pt".format(fn[:8])
+            if os.path.exists(fn):
+                # print("{} Us find cache".format(fn))
+                boundary_pred = torch.load(fn).cuda()  # [N, 2]
+                # ent = torch.load(fn_ent)
+                # print(v.shape, ent.shape)
+            else:
+                boundary_pred = boundarymodel([coord, normals, offset])
+                torch.save(boundary_pred, fn)
             boundary_pred = boundarymodel([coord, normals, offset])
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)
