@@ -435,16 +435,16 @@ def train(train_loader, model, boundarymodel, criterion, boundary_criterion, opt
 
         use_amp = args.use_amp
         with torch.cuda.amp.autocast(enabled=use_amp):
-            fn = "visual/boundary_fea_cache/train/Us_{}.pt".format(fn[:8])
-            if os.path.exists(fn):
-                # print("{} Us find cache".format(fn))
-                boundary_pred = torch.load(fn).cuda()  # [N, 2]
-                # ent = torch.load(fn_ent)
-                # print(v.shape, ent.shape)
-            else:
-                boundary_pred = boundarymodel([coord, normals, offset])
-                torch.save(boundary_pred, fn)
-            # boundary_pred = boundarymodel([coord, normals, offset])
+        #     fn = "visual/boundary_fea_cache/train/Us_{}.pt".format(fn[:8])
+        #     if os.path.exists(fn):
+        #         # print("{} Us find cache".format(fn))
+        #         boundary_pred = torch.load(fn).cuda()  # [N, 2]
+        #         # ent = torch.load(fn_ent)
+        #         # print(v.shape, ent.shape)
+        #     else:
+        #         boundary_pred = boundarymodel([coord, normals, offset])
+        #         torch.save(boundary_pred, fn)
+            boundary_pred = boundarymodel([coord, normals, offset])
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)
             # boundary_pred_ = (boundary_pred_[:,1] > 0.5).int()
@@ -605,15 +605,15 @@ def validate(val_loader, model, boundarymodel, criterion, boundary_criterion):
         #     feat = torch.cat([normals, coord], 1)
         
         with torch.no_grad():
-            fn = "visual/boundary_fea_cache/val/Us_{}.pt".format(fn[:8])
-            if os.path.exists(fn):
-                # print("{} Us find cache".format(fn))
-                boundary_pred = torch.load(fn).cuda()  # [N, 2]
-                # ent = torch.load(fn_ent)
-                # print(v.shape, ent.shape)
-            else:
-                boundary_pred = boundarymodel([coord, normals, offset])
-                torch.save(boundary_pred, fn)
+            # fn = "visual/boundary_fea_cache/val/Us_{}.pt".format(fn[:8])
+            # if os.path.exists(fn):
+            #     # print("{} Us find cache".format(fn))
+            #     boundary_pred = torch.load(fn).cuda()  # [N, 2]
+            #     # ent = torch.load(fn_ent)
+            #     # print(v.shape, ent.shape)
+            # else:
+            #     boundary_pred = boundarymodel([coord, normals, offset])
+            #     torch.save(boundary_pred, fn)
             boundary_pred = boundarymodel([coord, normals, offset])
             # softmax = torch.nn.Softmax(dim=1)
             # boundary_pred_ = softmax(boundary_pred)

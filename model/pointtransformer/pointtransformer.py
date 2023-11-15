@@ -1059,14 +1059,14 @@ class SegNet(nn.Module):
         x3_prim = self.dec3_p[1:]([p3, self.dec3_p[0]([p3, x3, o3], [p4, x4_prim, o4]), o3])[1]
         x2_prim = self.dec2_p[1:]([p2, self.dec2_p[0]([p2, x2, o2], [p3, x3_prim, o3]), o2])[1]
         x1_prim = self.dec1_p[1]([p1, self.dec1_p[0]([p1, x1, o1], [p2, x2_prim, o2]), o1], edges, boundary_guid)[1]
-        embedtype_fea = self.decoder_embedandtype(x1_prim)
+        # embedtype_fea = self.decoder_embedandtype(x1_prim)
         # embedtype_fea += 0.2*boundary_pred
         # type_fea = self.decoder_type(x1_prim)
-        type_per_point = self.cls(embedtype_fea)
-        fusion_fea = self.fusion(torch.cat((boundary_pred, type_per_point.detach()), dim=1))
-        embed_fea = embedtype_fea + 0.2*fusion_fea
+        type_per_point = self.cls(x1_prim)
+        # fusion_fea = self.fusion(torch.cat((boundary_pred, type_per_point.detach()), dim=1))
+        # embed_fea = embedtype_fea + 0.2*fusion_fea
 
-        primitive_embedding = self.embedding(embed_fea)
+        primitive_embedding = self.embedding(x1_prim)
 
         # x5_embedding = self.dec5_embedding[1:]([p5, self.dec5_embedding[0]([p5, x5, o5]), o5])[1]
         # x4_embedding = self.dec4_embedding[1:]([p4, self.dec4_embedding[0]([p4, x4, o4], [p5, x5_embedding, o5]), o4])[1]
