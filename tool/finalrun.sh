@@ -27,8 +27,8 @@ export PYTHONPATH=./
 PYTHON=python
 TRAIN_CODE=final.py
 dataset=abc
-exp_name=7input_wosed_bqueryv1
-exp_dir=exp/final/${exp_name}
+exp_name=ours-2
+exp_dir=exp/results-log/${exp_name}
 model_dir=${exp_dir}/model
 config=config/abc/final.yaml
 mkdir -p ${model_dir}

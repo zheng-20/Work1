@@ -2,6 +2,8 @@ import os, sys
 import requests
 
 import trimesh
+
+# from util.visualize_util import open3d_vis_prim_face
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
 sys.path.append(os.path.join(BASE_DIR, '../'))
@@ -131,7 +133,7 @@ def main_worker(gpu, ngpus_per_node, argss):
 
     # if args.sync_bn:
     #    model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
-    criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label, label_smoothing=0.025).cuda() # label_smoothing=0.2
+    criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label).cuda() # label_smoothing=0.2
     boundary_criterion = nn.CrossEntropyLoss(ignore_index=args.ignore_label).cuda()
 
     # optimizer = torch.optim.SGD(model.parameters(), lr=args.base_lr, momentum=args.momentum, weight_decay=args.weight_decay)
@@ -390,14 +392,20 @@ def main_worker(gpu, ngpus_per_node, argss):
         if (epoch_log % args.save_freq == 0) and main_process():
             if not os.path.exists(args.save_path + "/model/"):
                 os.makedirs(args.save_path + "/model/")
+            if not os.path.exists(args.save_path + "/boundarymodel/"):
+                os.makedirs(args.save_path + "/boundarymodel/")
             filename = args.save_path + '/model/model_last.pth'
+            boundaryfilename = args.save_path + '/boundarymodel/model_last.pth'
             logger.info('Saving checkpoint to: ' + filename)
             torch.save({'epoch': epoch_log, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(),
                         'scheduler': scheduler.state_dict(), 'best_iou': best_iou, 'best_iou_cluster': best_iou_cluster}, filename)
+            torch.save({'state_dict': boundarymodel.state_dict()}, boundaryfilename)
             if is_best:
                 logger.info('Best validation mIoU updated to: {:.4f}'.format(best_iou))
                 shutil.copyfile(filename, args.save_path + '/model/model_best.pth')
                 shutil.copyfile(filename, args.save_path + '/model/model_{}.pth'.format(epoch_log))
+                shutil.copyfile(boundaryfilename, args.save_path + '/boundarymodel/model_best.pth')
+                shutil.copyfile(boundaryfilename, args.save_path + '/boundarymodel/model_{}.pth'.format(epoch_log))
             if is_best_cluster:
                 logger.info('Best validation mIoU(cluster) updated to: {:.4f}'.format(best_iou_cluster))
                 shutil.copyfile(filename, args.save_path + '/model/model_best_cluster.pth')
@@ -622,16 +630,18 @@ def validate(val_loader, model, boundarymodel, criterion, boundary_criterion):
             primitive_embedding, type_per_point = model([coord, normals, offset], edges, boundary_pred = boundary_pred, is_train=False)
             # contrast_loss, feat_loss, boundary_loss = torch.tensor(0).cuda(), torch.tensor(0).cuda(), torch.tensor(0).cuda()
             # loss = criterion(output, target)
-            feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
+            # feat_loss, pull_loss, push_loss = compute_embedding_loss(primitive_embedding, label, offset)
             # feat_loss, pull_loss, push_loss = compute_embedding_loss_boundary(coord, boundary, primitive_embedding, label, offset)
             # type_loss = criterion(type_per_point, semantic)
-            type_loss = compute_type_loss(type_per_point, semantic, criterion)
+            # type_loss = compute_type_loss(type_per_point, semantic, criterion)
             # boundary_loss = boundary_criterion(boundary_pred, boundary)
             # boundary_loss = compute_boundary_loss(boundary_pred, boundary)
             # contrast_loss = compute_boundary_loss_for_type(coord, type_per_point, semantic, offset)
             # contrast_loss = boundary_contrast_loss(coord, boundary, primitive_embedding, label, offset)
             boundary_loss = torch.tensor(0.0).cuda()
             contrast_loss = torch.tensor(0.0).cuda()
+            feat_loss = torch.tensor(0.0).cuda()
+            type_loss = torch.tensor(0.0).cuda()
             # contrast_loss = boundary_contrastive_loss(primitive_embedding, boundary, offset)
             loss = feat_loss + type_loss
 
@@ -767,6 +777,9 @@ def validate(val_loader, model, boundarymodel, criterion, boundary_criterion):
             # s_iou_, p_iou_ = compute_iou_RG(gt_face_labels, face_labels, semantic_faces, semantic_faces_gt)
             s_iou_with_embed, p_iou_with_embed = compute_iou_RG(gt_face_labels, face_labels_with_embed, semantic_faces, semantic_faces_gt)
             s_iou_cluster, p_iou_cluster = compute_iou(label, spec_cluster_pred, type_pred, semantic, offset)
+            # open3d_vis_prim_face(fn, V.cpu().numpy(), F, face_labels_with_embed, gt_face_labels)
+            np.savez_compressed('exp/results/ours/predictions/%s'%((fn[0] + '.npz')), V=V.cpu().numpy(),F=F,L=face_labels_with_embed,L_gt=gt_face_labels, S=semantic_faces, S_gt=semantic_faces_gt)
+            np.savez_compressed('exp/results/ours_point/predictions/%s'%((fn[0] + '.npz')), V=V.cpu().numpy(),F=F,L=output_label_with_embed,L_cluster=spec_cluster_pred,L_gt=pp, S=pp, S_gt=semantic.cpu().numpy())
             # spec_cluster_pred = torch.from_numpy(spec_cluster_pred).unsqueeze(0).cuda()
             # s_iou_cluster = compute_miou(spec_cluster_pred, label.unsqueeze(0)).item()
             # p_iou_cluster = compute_type_miou_abc(type_pred.unsqueeze(0), semantic.unsqueeze(0), spec_cluster_pred, label.unsqueeze(0)).item()
